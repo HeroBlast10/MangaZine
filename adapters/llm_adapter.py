@@ -1,0 +1,213 @@
+"""
+MangaZine LLM Adapter
+Wraps the Google GenAI SDK for structured text generation.
+Model: gemini-3.1-pro-preview
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import re
+from typing import Type, TypeVar
+
+from google import genai
+from google.genai import types
+from pydantic import BaseModel, ValidationError
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T", bound=BaseModel)
+
+_GEMINI_TEXT_MODEL = "gemini-3.1-pro-preview"
+_DEFAULT_TEMPERATURE = 0.7
+_DEFAULT_MAX_TOKENS = 8192
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 2.0  # seconds, doubles each attempt
+
+
+class LLMAdapterError(Exception):
+    """Raised when the LLM adapter encounters an unrecoverable error."""
+
+
+class LLMAdapter:
+    """
+    Async adapter for the Google GenAI SDK targeting gemini-3.1-pro-preview.
+
+    Supports structured (JSON-schema-constrained) responses that are
+    automatically parsed and validated against Pydantic V2 models.
+    All public methods are async-first.
+    """
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = _GEMINI_TEXT_MODEL,
+    ) -> None:
+        resolved_key = api_key or os.environ.get("GOOGLE_API_KEY")
+        if not resolved_key:
+            raise LLMAdapterError(
+                "Google API key not found. "
+                "Set the GOOGLE_API_KEY environment variable or pass api_key=."
+            )
+        self._client = genai.Client(api_key=resolved_key)
+        self._model = model
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    async def generate_structured_response(
+        self,
+        prompt: str,
+        response_schema: Type[T],
+        system_instruction: str | None = None,
+        temperature: float = _DEFAULT_TEMPERATURE,
+        max_output_tokens: int = _DEFAULT_MAX_TOKENS,
+    ) -> T:
+        """
+        Call the LLM and parse the JSON response into *response_schema*.
+
+        The SDK is instructed to return ``application/json`` constrained by
+        the Pydantic model's JSON schema.  On success the model instance is
+        returned fully validated.
+
+        Retries up to ``_MAX_RETRIES`` times with exponential back-off on
+        transient network / rate-limit errors.  Validation failures are
+        surfaced immediately as ``LLMAdapterError``.
+
+        Parameters
+        ----------
+        prompt:
+            User-facing prompt text.
+        response_schema:
+            Pydantic V2 model class.  Fields with ``default_factory`` are
+            considered optional by the JSON schema so the LLM may omit them
+            (Pydantic will fill them in on parse).
+        system_instruction:
+            Optional system-level instruction prepended before the prompt.
+        temperature:
+            Sampling temperature (0 = deterministic, 1 = very creative).
+        max_output_tokens:
+            Upper bound on response token count.
+
+        Returns
+        -------
+        T
+            Validated instance of *response_schema*.
+        """
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            system_instruction=system_instruction,
+        )
+
+        last_exc: Exception | None = None
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=self._model,
+                    contents=[prompt],
+                    config=config,
+                )
+                return self._parse_response(response, response_schema)
+
+            except LLMAdapterError:
+                raise  # validation failures — don't retry
+
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    delay = _RETRY_BASE_DELAY ** attempt
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d): %s — retrying in %.1fs",
+                        attempt,
+                        _MAX_RETRIES,
+                        exc,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+
+        raise LLMAdapterError(
+            f"LLM call failed after {_MAX_RETRIES} retries. Last error: {last_exc}"
+        ) from last_exc
+
+    async def generate_raw(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        temperature: float = _DEFAULT_TEMPERATURE,
+        max_output_tokens: int = _DEFAULT_MAX_TOKENS,
+    ) -> str:
+        """
+        Generate a raw text response with no schema constraint.
+
+        Useful for free-form brainstorming steps before structured extraction.
+        """
+        config = types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            system_instruction=system_instruction,
+        )
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=[prompt],
+                config=config,
+            )
+            return response.text or ""
+        except Exception as exc:  # noqa: BLE001
+            raise LLMAdapterError(f"Raw LLM call failed: {exc}") from exc
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_response(response, response_schema: Type[T]) -> T:
+        """
+        Extract and validate the model's JSON output.
+
+        Attempts three strategies in order:
+        1. ``response.parsed`` — populated by the SDK when ``response_schema``
+           is a Pydantic model (newest SDK versions).
+        2. ``response.text`` — direct JSON string parse.
+        3. Regex extraction of the first ``{...}`` block from ``response.text``
+           (fallback for models that wrap JSON in markdown).
+        """
+        # Strategy 1: SDK-populated .parsed attribute
+        parsed_attr = getattr(response, "parsed", None)
+        if parsed_attr is not None:
+            if isinstance(parsed_attr, response_schema):
+                return parsed_attr
+            try:
+                return response_schema.model_validate(parsed_attr)
+            except ValidationError:
+                pass  # fall through to text strategies
+
+        raw_text: str = response.text or ""
+
+        # Strategy 2: direct JSON parse
+        try:
+            return response_schema.model_validate_json(raw_text)
+        except (ValidationError, ValueError):
+            pass
+
+        # Strategy 3: extract first JSON object from possibly wrapped response
+        match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+        if match:
+            try:
+                return response_schema.model_validate_json(match.group())
+            except (ValidationError, ValueError) as exc:
+                raise LLMAdapterError(
+                    f"Schema validation failed for {response_schema.__name__}: {exc}\n"
+                    f"Raw LLM output:\n{raw_text[:500]}"
+                ) from exc
+
+        raise LLMAdapterError(
+            f"Could not extract valid JSON for {response_schema.__name__} "
+            f"from LLM response:\n{raw_text[:500]}"
+        )
