@@ -133,8 +133,12 @@ cd MangaZine
 # 安装后端依赖
 pip install -r requirements.txt
 
-# 设置 API Key
-export GOOGLE_API_KEY="your-google-api-key"
+# 配置 API Key（一次性设置）
+# 1. 复制 .env 模板文件
+copy .env.example .env
+# 2. 编辑 .env 文件，填入你的 Google API Key
+# GOOGLE_API_KEY=your-actual-api-key-here
+# 获取 API Key: https://aistudio.google.com/app/apikey
 
 # 运行 CLI 流水线（从一句话生成单页漫画）
 python cli/run_pipeline.py "赛博朋克大厨用激光锅铲对决美食评论家"

@@ -133,8 +133,12 @@ cd MangaZine
 # Install backend dependencies
 pip install -r requirements.txt
 
-# Set your API key
-export GOOGLE_API_KEY="your-google-api-key"
+# Configure API Key (one-time setup)
+# 1. Copy the .env template file
+cp .env.example .env
+# 2. Edit .env and add your Google API Key
+# GOOGLE_API_KEY=your-actual-api-key-here
+# Get your API Key: https://aistudio.google.com/app/apikey
 
 # Run the CLI pipeline (generates a single-page comic from a premise)
 python cli/run_pipeline.py "A cyberpunk chef fights food critics with a laser spatula"

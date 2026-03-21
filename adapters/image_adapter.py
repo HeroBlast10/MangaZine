@@ -16,10 +16,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
 from models.schemas import StylePack
+
+# Load .env file from project root
+_PROJECT_ROOT = Path(__file__).parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
 
 logger = logging.getLogger(__name__)
 
