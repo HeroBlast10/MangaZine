@@ -136,11 +136,22 @@ pip install -r requirements.txt
 # Configure API Key (one-time setup)
 # 1. Copy the .env template file
 cp .env.example .env
-# 2. Edit .env and add your Google API Key
-# GOOGLE_API_KEY=your-actual-api-key-here
-# Get your API Key: https://aistudio.google.com/app/apikey
+
+# 2. Edit .env and configure backend providers
+#    Supported LLM: gemini (default), openai
+#    Supported Image: gemini (default), openai, seedream
+#    Example:
+#      LLM_PROVIDER=gemini
+#      IMAGE_PROVIDER=gemini
+#      GOOGLE_API_KEY=your-actual-key
+
+# 3. Add API keys for your chosen providers
+#    - Google AI Studio: https://aistudio.google.com/app/apikey
+#    - OpenAI: https://platform.openai.com/api-keys
+#    - Seedream (Bytedance Doubao): https://console.volcengine.com/ark
 
 # Run the CLI pipeline (generates a single-page comic from a premise)
+# Each run creates a unique timestamped folder to avoid overwriting
 python cli/run_pipeline.py "A cyberpunk chef fights food critics with a laser spatula"
 
 # Install frontend dependencies and start the dev server

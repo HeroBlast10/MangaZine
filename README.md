@@ -136,11 +136,22 @@ pip install -r requirements.txt
 # 配置 API Key（一次性设置）
 # 1. 复制 .env 模板文件
 copy .env.example .env
-# 2. 编辑 .env 文件，填入你的 Google API Key
-# GOOGLE_API_KEY=your-actual-api-key-here
-# 获取 API Key: https://aistudio.google.com/app/apikey
+
+# 2. 编辑 .env 文件，配置后端服务商
+#    支持的 LLM: gemini (默认), openai
+#    支持的 Image: gemini (默认), openai, seedream
+#    示例：
+#      LLM_PROVIDER=gemini
+#      IMAGE_PROVIDER=gemini
+#      GOOGLE_API_KEY=your-actual-key
+
+# 3. 填入对应服务商的 API Key
+#    - Google AI Studio: https://aistudio.google.com/app/apikey
+#    - OpenAI: https://platform.openai.com/api-keys
+#    - Seedream (字节豆包): https://console.volcengine.com/ark
 
 # 运行 CLI 流水线（从一句话生成单页漫画）
+# 每次运行会自动创建独立的时间戳文件夹，避免覆盖
 python cli/run_pipeline.py "赛博朋克大厨用激光锅铲对决美食评论家"
 
 # 安装前端依赖并启动开发服务器

@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,8 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.syntax import Syntax
 from rich.table import Table
 
-from adapters import ImageAdapter, ImageAdapterError, LLMAdapter, LLMAdapterError
+from adapters import create_llm_adapter, create_image_adapter, LLMAdapterError, ImageAdapterError
+from config import Config
 from models.schemas import (
     CharacterBible,
     ComicProject,
@@ -260,10 +262,11 @@ async def run(premise: str, output_dir: Path) -> None:
     )
 
     # ── Adapters ──────────────────────────────────────────────────────────
-    console.print("\n[bold]● Initialising adapters…[/bold]")
+    console.print(f"\n[bold]● Initialising adapters…[/bold] [dim]({Config.LLM_PROVIDER.value} + {Config.IMAGE_PROVIDER.value})[/dim]")
     try:
-        llm = LLMAdapter()
-        img = ImageAdapter()
+        Config.validate()
+        llm = create_llm_adapter()
+        img = create_image_adapter()
     except (LLMAdapterError, ImageAdapterError) as exc:
         console.print(f"[bold red]✗ Adapter init failed:[/bold red] {exc}")
         sys.exit(1)
@@ -493,11 +496,23 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("output"),
+        default=None,
         metavar="DIR",
-        help="Output directory for images, checkpoints, and project JSON (default: ./output).",
+        help="Output directory (default: auto-generated timestamp folder in ./output/).",
     )
     args = parser.parse_args()
+    
+    # Create unique project folder if not specified
+    if args.output_dir is None and Config.USE_UNIQUE_PROJECT_FOLDERS:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Sanitize premise for folder name
+        safe_premise = "".join(c if c.isalnum() or c in " _-" else "_" for c in args.premise[:30])
+        safe_premise = safe_premise.strip().replace(" ", "_")
+        folder_name = f"{timestamp}_{safe_premise}"
+        args.output_dir = Config.OUTPUT_DIR / folder_name
+    elif args.output_dir is None:
+        args.output_dir = Config.OUTPUT_DIR
+    
     asyncio.run(run(premise=args.premise, output_dir=args.output_dir))
 
 

@@ -1,12 +1,30 @@
 """MangaZine adapter layer — re-exports for convenient top-level imports."""
 
-from adapters.image_adapter import GeneratedImage, ImageAdapter, ImageAdapterError
-from adapters.llm_adapter import LLMAdapter, LLMAdapterError
+from adapters.base import (
+    BaseLLMAdapter,
+    BaseImageAdapter,
+    AdapterError,
+    LLMAdapterError,
+    ImageAdapterError,
+)
+from adapters.factory import create_llm_adapter, create_image_adapter
+
+# Legacy exports for backward compatibility
+from adapters.gemini_llm import GeminiLLMAdapter as LLMAdapter
+from adapters.gemini_image import GeminiImageAdapter as ImageAdapter
 
 __all__ = [
-    "LLMAdapter",
+    # Factory functions (recommended)
+    "create_llm_adapter",
+    "create_image_adapter",
+    # Base classes
+    "BaseLLMAdapter",
+    "BaseImageAdapter",
+    # Errors
+    "AdapterError",
     "LLMAdapterError",
-    "ImageAdapter",
     "ImageAdapterError",
-    "GeneratedImage",
+    # Legacy (for backward compatibility)
+    "LLMAdapter",
+    "ImageAdapter",
 ]
