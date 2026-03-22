@@ -4,6 +4,7 @@ import Image from 'next/image';
 import React from 'react';
 
 import { useComicStore } from '@/store/comicStore';
+import { getLayoutConfig } from '@/lib/layoutConfigs';
 import type { GridCell, PageLayout, PageSpec, PanelSpec } from '@/types/comic';
 
 // ---------------------------------------------------------------------------
@@ -211,16 +212,34 @@ export function ComicCanvas({ page, className = '' }: ComicCanvasProps) {
   const setSelectedPanel   = useComicStore((s) => s.setSelectedPanel);
   const clearSelectedPanel = useComicStore((s) => s.clearSelectedPanel);
 
-  const { layout, panels, page_id } = page;
+  const { layout, panels, page_id, layout_template } = page;
   const hasExplicitCells = layout.cells.length === panels.length;
 
-  const gridStyle: React.CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: `repeat(${layout.columns}, 1fr)`,
-    gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
-    gap: `${layout.gutter_px}px`,
-    padding: layout.bleed ? 0 : `${layout.gutter_px}px`,
-  };
+  // Use layout_template if available, otherwise fall back to layout config
+  let gridStyle: React.CSSProperties;
+  
+  if (layout_template) {
+    const config = getLayoutConfig(layout_template);
+    gridStyle = {
+      display: 'grid',
+      gridTemplateColumns: config.gridTemplateColumns,
+      gridTemplateRows: config.gridTemplateRows,
+      gridTemplateAreas: config.gridTemplateAreas,
+      gap: `${layout.gutter_px || 8}px`,
+      padding: layout.bleed ? 0 : `${layout.gutter_px || 8}px`,
+    };
+  } else {
+    gridStyle = {
+      display: 'grid',
+      gridTemplateColumns: `repeat(${layout.columns}, 1fr)`,
+      gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
+      gap: `${layout.gutter_px}px`,
+      padding: layout.bleed ? 0 : `${layout.gutter_px}px`,
+    };
+  }
+
+  // Get panel areas from layout config
+  const layoutConfig = layout_template ? getLayoutConfig(layout_template) : null;
 
   return (
     <div
@@ -228,9 +247,14 @@ export function ComicCanvas({ page, className = '' }: ComicCanvasProps) {
       style={gridStyle}
     >
       {panels.map((panel, idx) => {
-        const cellStyle = hasExplicitCells
-          ? cellToGridStyle(layout.cells[idx], layout)
-          : undefined;
+        // Use grid area from layout template, or explicit cells, or auto-placement
+        let cellStyle: React.CSSProperties | undefined;
+        
+        if (layoutConfig && layoutConfig.panelAreas[idx]) {
+          cellStyle = { gridArea: layoutConfig.panelAreas[idx] };
+        } else if (hasExplicitCells) {
+          cellStyle = cellToGridStyle(layout.cells[idx], layout);
+        }
 
         const isSelected    = selectedPanelId === panel.panel_id;
         const isRerendering = rerenderingPanelIds.has(panel.panel_id);

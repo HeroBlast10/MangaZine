@@ -57,6 +57,45 @@ class LayoutType(str, Enum):
     TIER_STACK = "tier_stack"
 
 
+class LayoutTemplate(str, Enum):
+    """
+    Manga page layout templates with variable panel counts.
+    Each template defines a specific CSS grid arrangement.
+    """
+    
+    # 1 panel layouts (splash pages)
+    SPLASH_FULL = "splash_full"
+    
+    # 2 panel layouts
+    PANELS_2_VERTICAL = "panels_2_vertical"
+    PANELS_2_HORIZONTAL = "panels_2_horizontal"
+    
+    # 3 panel layouts
+    PANELS_3_VERTICAL = "panels_3_vertical"
+    PANELS_3_TOP_SPLIT = "panels_3_top_split"
+    PANELS_3_BOTTOM_SPLIT = "panels_3_bottom_split"
+    
+    # 4 panel layouts
+    PANELS_4_GRID = "panels_4_grid"
+    PANELS_4_VERTICAL = "panels_4_vertical"
+    PANELS_4_L_SHAPE = "panels_4_l_shape"
+    
+    # 5 panel layouts
+    PANELS_5_CROSS = "panels_5_cross"
+    PANELS_5_T_SHAPE = "panels_5_t_shape"
+    PANELS_5_STAGGERED = "panels_5_staggered"
+    
+    # 6 panel layouts
+    PANELS_6_GRID = "panels_6_grid"
+    PANELS_6_DYNAMIC = "panels_6_dynamic"
+    
+    # 7 panel layouts
+    PANELS_7_COMPLEX = "panels_7_complex"
+    
+    # 8 panel layouts
+    PANELS_8_GRID = "panels_8_grid"
+
+
 class ProjectStatus(str, Enum):
     """Overall project lifecycle state."""
 
@@ -416,6 +455,10 @@ class PageSpec(BaseModel):
         ...,
         ge=1,
         description="One-based page number within the episode.",
+    )
+    layout_template: LayoutTemplate = Field(
+        LayoutTemplate.PANELS_4_GRID,
+        description="Manga layout template defining panel arrangement.",
     )
     layout: PageLayout = Field(
         default_factory=PageLayout,

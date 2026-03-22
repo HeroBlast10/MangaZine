@@ -1,6 +1,6 @@
 # 多话连载漫画制作路线图 / Multi-Episode Manga Production Roadmap
 
-## 当前状态 / Current Status (v0.1)
+## 当前状态 / Current Status (v0.2)
 
 ✅ **已实现 / Implemented:**
 - 单页漫画生产（4分格）
@@ -8,12 +8,13 @@
 - 风格系统（StylePack）
 - 多后端支持（Gemini, OpenAI, Seedream）
 - 独立项目文件夹（时间戳命名）
+- **多页漫画生成（1话 = 1-20页）** ✨ NEW
+- **可变分格布局（每页3-8个panel，16种布局模板）** ✨ NEW
+- **多话剧情连续性（--continue-from 参数）** ✨ NEW
+- **话与话之间的状态复用（CharacterBible + StylePack 继承）** ✨ NEW
+- **剧情记忆注入（前3话摘要自动注入）** ✨ NEW
 
-❌ **未实现 / Not Yet Implemented:**
-- 多页漫画生成（1话 = 10-20页）
-- 可变分格布局（每页不同的panel数量和排列）
-- 多话剧情连续性
-- 话与话之间的状态复用
+🎉 **所有核心功能已实现！**
 
 ---
 

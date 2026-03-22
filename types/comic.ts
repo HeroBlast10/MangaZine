@@ -38,6 +38,24 @@ export type LayoutType =
   | 'free_form'
   | 'tier_stack';
 
+export type LayoutTemplate =
+  | 'splash_full'
+  | 'panels_2_vertical'
+  | 'panels_2_horizontal'
+  | 'panels_3_vertical'
+  | 'panels_3_top_split'
+  | 'panels_3_bottom_split'
+  | 'panels_4_grid'
+  | 'panels_4_vertical'
+  | 'panels_4_l_shape'
+  | 'panels_5_cross'
+  | 'panels_5_t_shape'
+  | 'panels_5_staggered'
+  | 'panels_6_grid'
+  | 'panels_6_dynamic'
+  | 'panels_7_complex'
+  | 'panels_8_grid';
+
 export type ProjectStatus =
   | 'draft'
   | 'in_production'
@@ -175,6 +193,7 @@ export interface PageLayout {
 export interface PageSpec {
   page_id: string;
   page_number: number;
+  layout_template?: LayoutTemplate;
   layout: PageLayout;
   panels: PanelSpec[];
   chapter_break: boolean;
