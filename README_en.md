@@ -1,8 +1,8 @@
 # MangaZine 🖋️
 
-> **Comics are productions, not prompts.**  
-> The open-source, multi-agent framework and non-destructive editor for AI manga creation.  
-> **Now supports multi-page generation, variable panel layouts, and serialized episodes.**
+> **Comics are production systems, not single prompts.**  
+> An open-source multi-agent framework and browser editor for AI manga creation.  
+> **Now supports multi-page generation, serialized episodes, panel rerendering, and local image preview.**
 
 **[中文 README →](./README.md)**
 
@@ -13,207 +13,250 @@
 
 ---
 
-MangaZine is **not** another "text-to-image" wrapper.
+MangaZine is **not** another text-to-image wrapper.
 
-It is a **multi-agent runtime + non-destructive editor** built to transform manga creation into a structured, controllable, and traceable production pipeline. Our audience is **creators with great ideas and storyboard instincts who are constrained by their drawing ability** — novelists, screenwriters, tabletop RPG players, and anyone with a story in their head and no way to put it on a page.
+It is built around a different idea: manga creation should be a traceable production pipeline. Character design, style DNA, episode memory, page layouts, panel prompts, rerendering, and revision history should all live in a structured project model instead of disappearing into one-off prompts.
 
-> 🎯 **MangaZine gives every storyteller a complete manga studio in their browser.**
-
-We believe: **human control is a feature, not a fallback.**
+> 🎯 **MangaZine aims to give every storyteller a browser-based manga studio that actually works like a studio.**
 
 ---
 
 ## 💡 Core Philosophy
 
-**1. Comics are productions, not prompts**  
-A comic is a continuous production process — character design, narrative pacing, storyboarding, dialogue, and revision. A single prompt cannot produce a comic.
+**1. Comics are production pipelines, not prompt lotteries**  
+Real comic work is iterative. Character consistency, page rhythm, dialogue, visual composition, and revision all matter. The system is designed to expose and preserve those steps.
 
-**2. Specialised agents, not one model for everything**  
-The Writer Agent handles story. The Storyboarder Agent handles rhythm. The Prompt Director synthesises visuals. Every agent has a clear responsibility boundary and typed output contract.
+**2. Specialised agents beat one giant “do everything” model**  
+The Writer handles story and dialogue. The Storyboarder handles pacing and layouts. The Prompt Director turns structured state into deterministic image prompts.
 
-**3. Structured state over raw strings**  
-Every intermediate artefact (Character Bible, Page Specs, Panel Prompts) is persisted as strictly-typed JSON. No black-box generation. Full version history. Deterministic reproducibility.
+**3. Structured state beats raw text blobs**  
+`CharacterBible`, `StylePack`, `EpisodeOutline`, `PageSpec`, and `PanelSpec` are stored as typed JSON so the project can be resumed, inspected, edited, and rerendered safely.
 
-**4. Open, pluggable infrastructure**  
-MangaZine is designed as infrastructure — pluggable models, style packs, and workflow nodes.
+**4. Non-destructive editing matters more than one-shot generation**  
+The first image is only a draft. The editor should support local rerenders, best-effort preserve controls, and revision history without destroying the rest of the project.
 
 ---
 
-## ✨ Key Features
+## ✨ Current Capabilities
 
-### 📖 Multi-Page & Multi-Episode Production (v0.2 NEW)
-- **Variable page count**: 1-20 pages per episode via `--pages N` parameter
-- **16 layout templates**: 3-8 panels per page, auto-selected optimal layouts (splash, grid, L-shape, cross, etc.)
-- **Episode continuity**: Chain episodes with `--continue-from`, auto-inherit CharacterBible and StylePack
-- **Story memory**: Auto-inject summaries from previous 3 episodes for narrative consistency
-- **Isolated output**: Each project creates timestamped folders to prevent overwriting
+### 📖 Multi-Page, Multi-Episode Production
+- Generate 1 to 20 pages with `--pages N`
+- Continue later episodes with `--continue-from`
+- Reuse character and style state across episodes
+- Inject summaries from previous episodes to preserve story continuity
+- Write each run into its own timestamped output directory
 
-### 🎭 Multi-Agent Orchestration Pipeline
+### 🧠 Multi-Agent Production Pipeline
 | Agent | Responsibility |
 |---|---|
-| **WriterAgent** | Generates Character Bible, Episode Outline, and Dialogue Draft. Built-in **Critic sub-routine** automatically reviews narrative pacing and triggers revision loops. |
-| **StoryboarderAgent** | Converts the script into page layouts and panel specs. Supports variable panel counts and dynamic layout selection. |
-| **PromptDirectorAgent** | Deterministically synthesises the final image-generation prompt. Injects character visual descriptions and appends StylePack keywords in a strict, reproducible order. |
+| **WriterAgent** | Builds the Character Bible, episode outline, and dialogue draft, then reviews narrative pacing through a Critic sub-flow |
+| **StoryboarderAgent** | Expands the story into pages and panels, selecting layout templates automatically |
+| **PromptDirectorAgent** | Combines `PanelSpec + CharacterBible + StylePack` into deterministic image prompts |
 
 ### 🧬 Style DNA System
-Define art styles through deterministic numeric parameters (line weight, contrast, screentone density, panel regularity) rather than copyrighted artist names. The parameters translate to natural-language prompt modifiers automatically.
+`StylePack` encodes style with numeric and categorical controls such as line weight, contrast, screentone density, panel regularity, speed-line intensity, background detail, palette, and tone keywords. The point is to define style behavior, not to imitate a named artist.
 
-### 🛠️ Non-Destructive Editing
-- **Page-level & Panel-level** independent re-rendering
-- **Character-lock rerender**: keep character appearance, change pose or expression
-- **Composition-lock rerender**: keep the panel grid, change the camera angle
-- **Revision history**: every rerender snapshots the previous `RenderOutput` into `revision_history` before overwriting — always rollback-able
+### 🛠️ Browser Editor and Non-Destructive Rerendering
+- Load an existing `project_final.json` directly in the homepage
+- Switch episodes, switch pages, use grid view, and flip pages with keyboard arrows
+- Click a panel to open a sidebar with scene info, dialogue, prompt plan, and revision history
+- Rerender a single panel with full `style_pack`, `character_bible`, and lock constraints
+- “Preserve character / style / composition / dialogue” is implemented as a prompt-level best effort, not pixel-level image editing
+- Every rerender snapshots the previous `RenderOutput` into `revision_history`
 
-### 🗂️ Multi-Backend Model Support (BYOK)
-Supports multiple LLM and image generation backends:
+### 🖼️ Local Image Preview
+- The CLI stores generated file paths in `generation_params.local_image_path`
+- The frontend prefers `render_output.image_url`
+- If `image_url` is missing but a local path exists, the UI resolves it through `/api/project-image`
+- `GET /api/project-image` only serves files inside `output/` and rejects path traversal, absolute paths, and non-image suffixes
 
-**LLM Providers:**
-- **Gemini** (default): `gemini-3.1-pro-preview`
-- **OpenAI**: `gpt-4o`
+### 🔌 Multi-Backend Adapter Layer (BYOK)
+**LLM:**
+- Gemini
+- OpenAI
 
-**Image Generation Providers:**
-- **Gemini** (default): `gemini-3.1-flash-image-preview` (draft) / `gemini-3-pro-image-preview` (final)
-- **OpenAI**: `dall-e-3`
-- **Seedream** (Bytedance Doubao): `seedream-v1`
+**Image:**
+- `adapters/gemini_image.py`
+- `adapters/openai_image.py`
+- `adapters/seedream_image.py`
 
-Switch providers via `LLM_PROVIDER` and `IMAGE_PROVIDER` in `.env` file
+These adapter modules translate a shared internal contract (`prompt + StylePack + aspect_ratio + reference images`) into provider-specific API requests, then normalize the results back into `GeneratedImageResult`. That keeps the rest of the pipeline provider-agnostic.
 
 ---
 
 ## 🏗️ Architecture & Data Flow
 
-```
+```text
 Idea
-  │
-  ▼
-Story Bible              ← CharacterBible + StylePack
-  │                         (Multi-episode reuse: --continue-from)
-  ▼
-Episode Outline          ← WriterAgent + Story memory injection
-  │                         (Supports 1-20 pages/episode)
-  ▼
-Dialogue Draft           ← WriterAgent
-  │
-  ▼
-Multi-Page Specs         ← StoryboarderAgent + 16 layout templates
-  │                         (3-8 panels/page, dynamic selection)
-  ▼
-Panel Prompts            ← PromptDirectorAgent (deterministic synthesis)
-  │
-  ▼
-Renders                  ← ImageAdapter → Gemini / OpenAI / Seedream
-  │                         (Organized by page: page_01/panel_0.png)
-  ▼
-Typesetting → PDF / Webtoon Export   ← [Planned]
+  ↓
+CharacterBible + StylePack
+  ↓
+WriterAgent
+  ↓
+EpisodeOutline + Dialogue Draft
+  ↓
+StoryboarderAgent
+  ↓
+PageSpec / PanelSpec
+  ↓
+PromptDirectorAgent
+  ↓
+ImageAdapter (Gemini / OpenAI / Seedream)
+  ↓
+output/project_final.json + output/images/*
+  ↓
+Next.js Editor
+  ├─ GET /api/project-image      serves local files from output/
+  └─ POST /api/rerender-panel    calls python -m cli.rerender_panel
 ```
-
-Every artefact is persisted as **Pydantic V2** strictly-typed JSON — pauseable, inspectable, editable, and resumable at any stage.
 
 ---
 
 ## 📁 Project Structure
 
-```
+```text
 MangaZine/
-├── models/
-│   ├── schemas.py                # Core domain models (Pydantic V2)
-│   └── layouts.py                # 16 layout template configs (CSS Grid)
 ├── agents/
-│   ├── writer_agent.py           # WriterAgent + Critic sub-routine
-│   ├── storyboarder_agent.py     # StoryboarderAgent + rhythm validation
-│   └── prompt_director_agent.py  # Deterministic prompt synthesis
+│   ├── prompt_director_agent.py
+│   ├── storyboarder_agent.py
+│   └── writer_agent.py
 ├── adapters/
-│   ├── base.py                   # Abstract base interfaces
-│   ├── factory.py                # Adapter factory
-│   ├── gemini_llm.py             # Gemini LLM adapter
-│   ├── gemini_image.py           # Gemini image adapter
-│   ├── openai_llm.py             # OpenAI LLM adapter
-│   ├── openai_image.py           # OpenAI DALL-E adapter
-│   └── seedream_image.py         # Seedream image adapter
-├── components/                   # Next.js React components
-│   ├── ComicCanvas.tsx           # Variable layout page renderer
-│   ├── MultiPageViewer.tsx       # Multi-page navigation component
-│   └── PanelEditorSidebar.tsx    # Non-destructive editor sidebar
+│   ├── base.py
+│   ├── factory.py
+│   ├── gemini_image.py
+│   ├── gemini_llm.py
+│   ├── openai_image.py
+│   ├── openai_llm.py
+│   └── seedream_image.py
+├── app/
+│   ├── api/
+│   │   ├── project-image/route.ts
+│   │   └── rerender-panel/route.ts
+│   ├── layout.tsx
+│   └── page.tsx
+├── cli/
+│   ├── image_paths.py
+│   ├── rerender_panel.py
+│   └── run_pipeline.py
+├── components/
+│   ├── ComicCanvas.tsx
+│   ├── MultiPageViewer.tsx
+│   └── PanelEditorSidebar.tsx
 ├── lib/
-│   └── layoutConfigs.ts          # Frontend layout configs
+│   ├── layoutConfigs.ts
+│   ├── projectImageServer.ts
+│   └── projectImageUrl.ts
+├── models/
+│   ├── layouts.py
+│   └── schemas.py
 ├── store/
-│   └── comicStore.ts             # Zustand global state
+│   └── comicStore.ts
 ├── types/
-│   └── comic.ts                  # TypeScript type definitions
-├── config.py                     # Multi-backend config management
-└── cli/
-    └── run_pipeline.py           # CLI multi-page multi-episode pipeline
+│   └── comic.ts
+├── config.py
+├── next.config.js
+└── package.json
 ```
 
 ---
 
 ## 🚀 Getting Started
 
-> ⚠️ MangaZine is in active development. v0.2 now supports multi-page and multi-episode serialized production.
+### 1. Install Dependencies
 
 ```bash
-# Clone the repo
 git clone git@github.com:HeroBlast10/MangaZine.git
 cd MangaZine
 
-# Install backend dependencies
 pip install -r requirements.txt
+npm install
+```
 
-# Configure API Key (one-time setup)
-# 1. Copy the .env template file
+### 2. Configure Environment Variables
+
+```bash
 cp .env.example .env
+```
 
-# 2. Edit .env and configure backend providers
-#    Supported LLM: gemini (default), openai
-#    Supported Image: gemini (default), openai, seedream
-#    Example:
-#      LLM_PROVIDER=gemini
-#      IMAGE_PROVIDER=gemini
-#      GOOGLE_API_KEY=your-actual-key
+Set the providers you want in `.env`:
 
-# 3. Add API keys for your chosen providers
-#    - Google AI Studio: https://aistudio.google.com/app/apikey
-#    - OpenAI: https://platform.openai.com/api-keys
-#    - Seedream (Bytedance Doubao): https://console.volcengine.com/ark
+```env
+LLM_PROVIDER=gemini
+IMAGE_PROVIDER=gemini
+GOOGLE_API_KEY=your-key
+OPENAI_API_KEY=
+SEEDREAM_API_KEY=
+```
 
-# Run the CLI pipeline (generates multi-page manga)
-# Each run creates a unique timestamped folder to avoid overwriting
+Optional:
 
-# Generate single-page comic (default)
+```env
+# The Next.js rerender route uses `python` by default.
+# Override this if your local environment requires a specific interpreter.
+PYTHON_EXECUTABLE=python
+```
+
+### 3. Run the CLI Pipeline
+
+```bash
+# Default: single-page project
 python cli/run_pipeline.py "A cyberpunk chef fights food critics with a laser spatula"
 
-# Generate 15-page manga (Episode 1)
+# Generate a 15-page Episode 1
 python cli/run_pipeline.py "A retired assassin opens a convenience store" --pages 15
 
-# Continue with Episode 2 (auto-inherit characters and style)
+# Continue from an existing project
 python cli/run_pipeline.py "Episode 2: A mysterious customer arrives" --continue-from output/20250322_090000_A_retired_assassin/project_final.json --pages 18
+```
 
-# Install frontend dependencies and start the dev server
-npm install
+### 4. Start the Browser Editor
+
+```bash
 npm run dev
 ```
 
-**Pipeline output (multi-page mode):**
-```
-output/20250322_090000_A_retired_assassin/
-├── project_final.json           # Full project state (resumable at any time)
+Then open `http://localhost:3000` and:
+
+1. Load `output/.../project_final.json`
+2. Switch episodes and pages
+3. Click a panel to open the editor sidebar
+4. Adjust the temporary prompt or preserve controls
+5. Click “Rerender Current Panel”
+
+---
+
+## 📦 Output Layout
+
+```text
+output/20260326_153000_example_project/
+├── project_final.json
 ├── images/
-│   ├── page_01/                 # Page 1
+│   ├── page_01/
 │   │   ├── panel_0.png
 │   │   ├── panel_1.png
-│   │   ├── panel_2.png
-│   │   └── panel_3.png
-│   ├── page_02/                 # Page 2
-│   │   ├── panel_0.png
-│   │   ├── panel_1.png
-│   │   ├── panel_2.png
-│   │   ├── panel_3.png
-│   │   └── panel_4.png          # Variable panel count
-│   └── ...
+│   │   └── ...
+│   └── page_02/
+├── rerenders/
+│   └── <page_id>/
+│       └── <panel_id>/
+│           └── 20260326T153522.png
 └── checkpoints/
-    ├── 01_character_bible.json  # Character settings (reused across episodes)
-    ├── 02_episode_outline.json  # Episode outline
-    └── 03_page_specs.json       # All page specifications
+    ├── 01_character_bible.json
+    ├── 02_episode_outline.json
+    └── 03_page_specs.json
+```
+
+`project_final.json` is the resumable project state. `images/` contains the initial pipeline renders. `rerenders/` stores panel-level revisions created from the frontend editor.
+
+---
+
+## ✅ Quality Checks
+
+```bash
+npm run type-check
+npm run lint
+npm run build
+python -m compileall adapters agents cli models config.py
 ```
 
 ---
@@ -222,10 +265,11 @@ output/20250322_090000_A_retired_assassin/
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.11+, FastAPI, Pydantic V2 |
-| AI SDK | Google GenAI SDK |
-| Frontend | Next.js 14 (App Router), React, Tailwind CSS, Zustand |
-| State | Zustand + Immer (frontend) / Pydantic JSON (backend) |
+| Backend | Python 3.11+, Pydantic v2, local Python route bridge |
+| Frontend | Next.js 14 (App Router), React, Tailwind CSS |
+| State | Zustand + Immer |
+| Image Integration | Gemini / OpenAI / Seedream adapter layer |
+| Project Model | `CharacterBible` / `StylePack` / `PageSpec` / `RenderOutput` |
 
 ---
 
@@ -233,16 +277,10 @@ output/20250322_090000_A_retired_assassin/
 
 - [x] v0.1: Core CLI pipeline + basic frontend editor
 - [x] v0.2: Multi-page generation + multi-episode continuity + 16 layout templates
-- [ ] v0.3: FastAPI backend + `/api/rerender-panel` endpoint
-- [ ] v0.4: Custom StylePack editor UI
-- [ ] v0.5: Multi-page frontend editor + episode export
-- [ ] v1.0: PDF / webtoon export + Typesetting Agent
-
----
-
-## 🤝 Contributing
-
-Issues and Pull Requests are welcome. Before contributing code, please read the core philosophy — especially the **structured state over raw strings** principle. Every new feature should have a typed Pydantic model as its input and output contract.
+- [x] Local image preview + panel rerender route
+- [ ] Visual StylePack editor
+- [ ] Typesetting / PDF / webtoon export
+- [ ] Richer review workflow
 
 ---
 

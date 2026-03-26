@@ -4,6 +4,7 @@ from adapters.base import (
     BaseLLMAdapter,
     BaseImageAdapter,
     AdapterError,
+    GeneratedImageResult,
     LLMAdapterError,
     ImageAdapterError,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "BaseImageAdapter",
     # Errors
     "AdapterError",
+    "GeneratedImageResult",
     "LLMAdapterError",
     "ImageAdapterError",
     # Legacy (for backward compatibility)

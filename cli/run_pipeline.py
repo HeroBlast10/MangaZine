@@ -32,6 +32,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from adapters import create_llm_adapter, create_image_adapter, LLMAdapterError, ImageAdapterError
+from cli.image_paths import build_internal_image_url, to_project_relative_path
 from config import Config
 from models.schemas import (
     CharacterBible,
@@ -509,26 +510,31 @@ async def run(
                 image_path = page_dir / f"panel_{panel.panel_index}.png"
 
                 try:
-                    image_bytes = await img.generate_panel_image(
+                    image_result = await img.generate_panel_image(
                         prompt=enriched_prompt,
                         style_pack=style_pack,
                         draft_mode=True,
+                        aspect_ratio="2:3",
                     )
                     
                     # Save image to disk
-                    image_path.write_bytes(image_bytes)
+                    image_path.write_bytes(image_result.image_bytes)
+                    internal_image_url = build_internal_image_url(image_path)
 
                     panel.render_output = RenderOutput(
                         status=RenderStatus.DRAFT_READY,
-                        model_used="draft",
+                        model_used=image_result.model_used,
+                        image_url=internal_image_url,
                         generation_params={
-                            "local_image_path": str(image_path),
+                            **image_result.generation_params,
+                            "local_image_path": to_project_relative_path(image_path),
                         },
+                        generated_at=image_result.generated_at,
                     )
                     rendered += 1
                     console.print(
                         f"    [green]✓[/green] page_{page.page_number:02d}/panel_{panel.panel_index}.png  "
-                        f"[dim]({len(image_bytes) // 1024} KB)[/dim]"
+                        f"[dim]({len(image_result.image_bytes) // 1024} KB)[/dim]"
                     )
 
                 except ImageAdapterError as exc:

@@ -312,11 +312,11 @@ class RenderOutput(BaseModel):
         None,
         description="Exact model identifier used, e.g. 'gemini-3.1-flash-image-preview'.",
     )
-    image_url: HttpUrl | None = Field(
+    image_url: str | None = Field(
         None,
-        description="URL of the rendered panel image.",
+        description="URL of the rendered panel image. Can be an internal app route.",
     )
-    thumbnail_url: HttpUrl | None = Field(
+    thumbnail_url: str | None = Field(
         None,
         description="URL of a lower-resolution thumbnail for UI previews.",
     )

@@ -1,42 +1,82 @@
 'use client';
 
-import { useState } from 'react';
-import { useComicStore } from '@/store/comicStore';
-import { ComicCanvas } from '@/components/ComicCanvas';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  BookOpen,
+  Layers,
+  Palette,
+  Sparkles,
+  Upload,
+  Users,
+} from 'lucide-react';
+
+import { MultiPageViewer } from '@/components/MultiPageViewer';
 import { PanelEditorSidebar } from '@/components/PanelEditorSidebar';
-import { Upload, Sparkles, BookOpen, Users, Palette, Layers } from 'lucide-react';
+import { useComicStore } from '@/store/comicStore';
 
 export default function Home() {
-  const project = useComicStore((s) => s.project);
-  const loadProject = useComicStore((s) => s.loadProject);
-  const selectedPanelId = useComicStore((s) => s.selectedPanelId);
+  const project = useComicStore((state) => state.project);
+  const loadProject = useComicStore((state) => state.loadProject);
+  const selectedPanelId = useComicStore((state) => state.selectedPanelId);
+  const clearSelectedPanel = useComicStore((state) => state.clearSelectedPanel);
+
   const [isDragging, setIsDragging] = useState(false);
+  const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+
+  const episodes = project?.episodes ?? [];
+  const selectedEpisode = episodes[selectedEpisodeIndex] ?? episodes[0];
+  const currentPage = useMemo(
+    () => selectedEpisode?.pages[currentPageIndex] ?? selectedEpisode?.pages[0] ?? null,
+    [currentPageIndex, selectedEpisode],
+  );
+
+  useEffect(() => {
+    setSelectedEpisodeIndex(0);
+    setCurrentPageIndex(0);
+  }, [project?.project_id]);
+
+  useEffect(() => {
+    if (!selectedEpisode) {
+      setCurrentPageIndex(0);
+      return;
+    }
+
+    if (!selectedEpisode.pages[currentPageIndex]) {
+      setCurrentPageIndex(0);
+    }
+  }, [currentPageIndex, selectedEpisode]);
+
+  useEffect(() => {
+    clearSelectedPanel();
+  }, [clearSelectedPanel, currentPageIndex, selectedEpisodeIndex]);
 
   const handleFileUpload = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = (event) => {
       try {
-        const json = e.target?.result as string;
+        const json = event.target?.result as string;
         loadProject(json);
-      } catch (err) {
-        alert('Invalid project JSON file');
-        console.error(err);
+      } catch (error) {
+        alert('项目 JSON 无法解析，请确认文件格式正确。');
+        console.error(error);
       }
     };
     reader.readAsText(file);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
+
+    const file = event.dataTransfer.files[0];
     if (file && file.name.endsWith('.json')) {
       handleFileUpload(file);
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault();
     setIsDragging(true);
   };
 
@@ -44,76 +84,82 @@ export default function Home() {
     setIsDragging(false);
   };
 
-  const currentPage = project?.episodes[0]?.pages[0];
+  const handleEpisodeChange = (nextEpisodeIndex: number) => {
+    setSelectedEpisodeIndex(nextEpisodeIndex);
+    setCurrentPageIndex(0);
+  };
+
+  const handleCloseProject = () => {
+    loadProject(null);
+    setSelectedEpisodeIndex(0);
+    setCurrentPageIndex(0);
+  };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* Header */}
-      <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm sticky top-0 z-30">
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-900/60 backdrop-blur-sm">
+        <div className="container mx-auto flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
               <Sparkles size={20} className="text-white" strokeWidth={2.5} />
             </div>
             <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">
+              <h1 className="bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-xl font-bold text-transparent">
                 MangaZine
               </h1>
-              <p className="text-[10px] text-zinc-500 tracking-wide">Multi-Agent Comic Studio</p>
+              <p className="text-[10px] tracking-wide text-zinc-500">
+                Multi-Agent Comic Studio
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            <span className="px-2 py-1 rounded bg-zinc-800 border border-zinc-700">v0.1.0-alpha</span>
-          </div>
+          <span className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-500">
+            v0.1.0-alpha
+          </span>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
         {!project ? (
-          <div className="max-w-4xl mx-auto">
-            {/* Hero Section */}
-            <div className="text-center mb-12 space-y-4">
-              <h2 className="text-4xl font-bold mb-3">
-                漫画是工程体系，
+          <div className="mx-auto max-w-5xl">
+            <div className="mb-12 space-y-4 text-center">
+              <h2 className="text-4xl font-bold leading-tight">
+                漫画是一整套生产流程，
                 <br />
                 <span className="bg-gradient-to-r from-violet-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                  而非单纯的提示词
+                  而不是一句提示词
                 </span>
               </h2>
-              <p className="text-zinc-400 text-lg max-w-2xl mx-auto leading-relaxed">
-                MangaZine 是一个开源的多智能体漫画创作框架。
+              <p className="mx-auto max-w-2xl text-lg leading-relaxed text-zinc-400">
+                MangaZine 是一个面向 AI 漫画创作的多智能体工作台。
                 <br />
-                编剧、分镜师、提示词导演各司其职，结构化状态驱动整个生产流水线。
+                从角色设定、分镜拆解到单格重生成，全部围绕结构化项目状态来驱动。
               </p>
             </div>
 
-            {/* Feature Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-              <div className="p-6 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-violet-500/50 transition-all">
-                <Users className="w-8 h-8 text-violet-400 mb-3" />
-                <h3 className="font-semibold mb-2">多智能体协作</h3>
+            <div className="mb-12 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 transition-all hover:border-violet-500/50">
+                <Users className="mb-3 h-8 w-8 text-violet-400" />
+                <h3 className="mb-2 font-semibold">多智能体协作</h3>
                 <p className="text-sm text-zinc-500">
-                  WriterAgent、StoryboarderAgent、PromptDirector 各司其职
+                  Writer、Storyboarder、Prompt Director 分工协作，让漫画生产链条可追踪、可迭代。
                 </p>
               </div>
-              <div className="p-6 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-purple-500/50 transition-all">
-                <Palette className="w-8 h-8 text-purple-400 mb-3" />
-                <h3 className="font-semibold mb-2">风格基因系统</h3>
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 transition-all hover:border-purple-500/50">
+                <Palette className="mb-3 h-8 w-8 text-purple-400" />
+                <h3 className="mb-2 font-semibold">风格 DNA</h3>
                 <p className="text-sm text-zinc-500">
-                  通过参数精确定义画风，拒绝版权侵权式提示词
+                  用可控参数描述画风，而不是依赖模糊的作者名提示词。
                 </p>
               </div>
-              <div className="p-6 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-pink-500/50 transition-all">
-                <Layers className="w-8 h-8 text-pink-400 mb-3" />
-                <h3 className="font-semibold mb-2">非破坏性编辑</h3>
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 transition-all hover:border-pink-500/50">
+                <Layers className="mb-3 h-8 w-8 text-pink-400" />
+                <h3 className="mb-2 font-semibold">非破坏式迭代</h3>
                 <p className="text-sm text-zinc-500">
-                  单格重绘、锁定角色、修订历史，完整的版本控制
+                  支持单格重生成、修订历史和尽量保持角色、风格、构图的返工流程。
                 </p>
               </div>
             </div>
 
-            {/* Upload Zone */}
             <div
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -125,46 +171,59 @@ export default function Home() {
                   : 'border-zinc-700 bg-zinc-900/50 hover:border-zinc-600',
               ].join(' ')}
             >
-              <div className="p-12 text-center space-y-4">
+              <div className="space-y-4 p-12 text-center">
                 <div className="flex justify-center">
-                  <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-zinc-800">
                     <Upload size={28} className="text-zinc-500" />
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold mb-2">加载漫画项目</h3>
-                  <p className="text-sm text-zinc-500 mb-4">
-                    拖拽 <code className="px-1.5 py-0.5 rounded bg-zinc-800 text-violet-400 text-xs font-mono">project_final.json</code> 文件到此处
+                  <h3 className="mb-2 text-lg font-semibold">载入漫画项目</h3>
+                  <p className="mb-4 text-sm text-zinc-500">
+                    将
+                    {' '}
+                    <code className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs text-violet-400">
+                      project_final.json
+                    </code>
+                    {' '}
+                    拖到这里，或直接从磁盘选择文件。
                   </p>
-                  <label className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium cursor-pointer transition-colors">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-violet-600 px-6 py-2.5 font-medium text-white transition-colors hover:bg-violet-500">
                     <BookOpen size={16} />
                     浏览文件
                     <input
                       type="file"
                       accept=".json"
                       className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleFileUpload(file);
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) {
+                          handleFileUpload(file);
+                        }
                       }}
                     />
                   </label>
                 </div>
-                <div className="pt-4 border-t border-zinc-800">
+                <div className="border-t border-zinc-800 pt-4">
                   <p className="text-xs text-zinc-600">
-                    运行 <code className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-mono">python cli/run_pipeline.py "你的故事"</code> 生成项目 JSON
+                    也可以先运行
+                    {' '}
+                    <code className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-zinc-400">
+                      python cli/run_pipeline.py &quot;你的故事&quot;
+                    </code>
+                    {' '}
+                    生成项目 JSON。
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Quick Links */}
             <div className="mt-8 flex justify-center gap-4 text-sm">
               <a
                 href="https://github.com/HeroBlast10/MangaZine"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-zinc-500 hover:text-violet-400 transition-colors"
+                className="text-zinc-500 transition-colors hover:text-violet-400"
               >
                 GitHub 仓库
               </a>
@@ -173,60 +232,79 @@ export default function Home() {
                 href="https://github.com/HeroBlast10/MangaZine/blob/master/README.md"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-zinc-500 hover:text-violet-400 transition-colors"
+                className="text-zinc-500 transition-colors hover:text-violet-400"
               >
-                使用文档
+                使用说明
               </a>
             </div>
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Project Info Bar */}
-            <div className="flex items-center justify-between p-4 rounded-xl bg-zinc-900 border border-zinc-800">
+            <div className="flex flex-col gap-4 rounded-xl border border-zinc-800 bg-zinc-900 p-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">{project.title}</h2>
                 <p className="text-sm text-zinc-500">
-                  {project.episodes[0]?.title || 'Episode 1'} · Page {currentPage?.page_number || 1}
+                  {selectedEpisode?.title ?? '未命名章节'}
+                  {' · '}
+                  第 {currentPage?.page_number ?? 1} 页
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-violet-500/20 text-violet-300 text-xs font-medium">
-                  {currentPage?.panels.length || 0} panels
+
+              <div className="flex flex-wrap items-center gap-3">
+                {episodes.length > 0 && (
+                  <label className="flex items-center gap-2 text-sm text-zinc-400">
+                    <span>章节</span>
+                    <select
+                      value={selectedEpisodeIndex}
+                      onChange={(event) => handleEpisodeChange(Number(event.target.value))}
+                      className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200 outline-none transition-colors focus:border-violet-500"
+                    >
+                      {episodes.map((episode, index) => (
+                        <option key={episode.episode_id} value={index}>
+                          第 {episode.episode_number} 话 · {episode.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <span className="rounded-full bg-violet-500/20 px-3 py-1 text-xs font-medium text-violet-300">
+                  当前页 {currentPage?.panels.length ?? 0} 个分镜
                 </span>
                 <button
-                  onClick={() => loadProject(null as any)}
-                  className="px-4 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm transition-colors"
+                  type="button"
+                  onClick={handleCloseProject}
+                  className="rounded-lg bg-zinc-800 px-4 py-1.5 text-sm transition-colors hover:bg-zinc-700"
                 >
                   关闭项目
                 </button>
               </div>
             </div>
 
-            {/* Canvas */}
-            {currentPage && (
-              <div className="flex gap-6">
-                <div className="flex-1">
-                  <ComicCanvas
-                    page={currentPage}
-                    className="rounded-xl overflow-hidden border border-zinc-800 shadow-2xl"
-                  />
-                </div>
-              </div>
+            {selectedEpisode && (
+              <MultiPageViewer
+                key={selectedEpisode.episode_id}
+                episode={selectedEpisode}
+                onCurrentPageChange={(_, pageIndex) => {
+                  setCurrentPageIndex(pageIndex);
+                }}
+              />
             )}
           </div>
         )}
       </main>
 
-      {/* Sidebar */}
       {selectedPanelId && project && (
-        <PanelEditorSidebar characterBible={project.character_bible} />
+        <PanelEditorSidebar
+          characterBible={project.character_bible}
+          stylePack={project.style_pack}
+        />
       )}
 
-      {/* Footer */}
-      <footer className="border-t border-zinc-800 mt-16 py-6">
+      <footer className="mt-16 border-t border-zinc-800 py-6">
         <div className="container mx-auto px-6 text-center text-xs text-zinc-600">
           <p>
-            MangaZine · 开源于{' '}
+            MangaZine · 基于
+            {' '}
             <a
               href="https://github.com/HeroBlast10/MangaZine"
               className="text-violet-400 hover:underline"

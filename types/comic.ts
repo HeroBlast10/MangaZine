@@ -140,7 +140,9 @@ export interface RenderOutput {
   model_used?: string;
   image_url?: string;
   thumbnail_url?: string;
-  generation_params: Record<string, unknown>;
+  generation_params: Record<string, unknown> & {
+    local_image_path?: string;
+  };
   generated_at?: string;
   reviewer_notes?: string;
 }
@@ -265,6 +267,8 @@ export interface LockConstraints {
 export interface RerenderRequest {
   panel: PanelSpec;
   page_id: string;
+  style_pack: StylePack;
+  character_bible: CharacterBible;
   lock_constraints: LockConstraints;
 }
 
@@ -272,4 +276,5 @@ export interface RerenderResponse {
   image_url: string;
   model_used: string;
   generation_params: Record<string, unknown>;
+  generated_at: string;
 }

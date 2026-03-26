@@ -44,7 +44,7 @@ interface ComicActions {
    * Load (or replace) the project from a raw JSON string or a parsed object.
    * Accepts both `string` (paste from disk) and `ComicProject` (API response).
    */
-  loadProject: (json: string | ComicProject) => void;
+  loadProject: (json: string | ComicProject | null) => void;
 
   /**
    * Deep-merge `newData` into the panel identified by `panelId` on `pageId`.
@@ -66,7 +66,7 @@ interface ComicActions {
     pageId: string,
     panelId: string,
     imageUrl: string,
-    meta?: Pick<RenderOutput, 'model_used' | 'generation_params'>,
+    meta?: Pick<RenderOutput, 'model_used' | 'generation_params' | 'generated_at'>,
   ) => void;
 
   /** Open the editor sidebar for a specific panel */
@@ -115,16 +115,14 @@ export const useComicStore = create<ComicState & ComicActions>()(
 
       loadProject: (json) => {
         set((state) => {
-          try {
-            state.project =
-              typeof json === 'string'
+          state.project =
+            json === null
+              ? null
+              : typeof json === 'string'
                 ? (JSON.parse(json) as ComicProject)
                 : json;
-            state.selectedPageId = null;
-            state.selectedPanelId = null;
-          } catch (err) {
-            console.error('[comicStore] loadProject: invalid JSON', err);
-          }
+          state.selectedPageId = null;
+          state.selectedPanelId = null;
         });
       },
 
@@ -159,7 +157,7 @@ export const useComicStore = create<ComicState & ComicActions>()(
             image_url: imageUrl,
             model_used: meta?.model_used ?? panel.render_output.model_used,
             generation_params: meta?.generation_params ?? panel.render_output.generation_params,
-            generated_at: new Date().toISOString(),
+            generated_at: meta?.generated_at ?? new Date().toISOString(),
           };
         });
       },

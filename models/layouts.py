@@ -116,7 +116,7 @@ LAYOUT_CONFIGS: Dict[LayoutTemplate, LayoutConfig] = {
     LayoutTemplate.PANELS_5_T_SHAPE: LayoutConfig(
         panel_count=5,
         grid_template_columns="1fr 1fr 1fr",
-        grid_template_rows="1fr 1fr",
+        grid_template_rows="1fr 1fr 1fr",
         grid_template_areas='"p1 p1 p1" "p2 p3 p4" "p5 p5 p5"',
         panel_areas=["p1", "p2", "p3", "p4", "p5"],
         description="T-shaped layout",

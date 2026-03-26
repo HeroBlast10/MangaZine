@@ -1,8 +1,8 @@
 # MangaZine 🖋️
 
-> **漫画是工程体系，而非单纯的提示词。**  
-> 专为 AI 漫画创作打造的开源多智能体框架与非破坏性编辑器。  
-> **支持多页漫画生成、可变分格布局、多话连载制作。**
+> **漫画是工程体系，而不是一句提示词。**  
+> 面向 AI 漫画创作的开源多智能体框架与浏览器编辑器。  
+> **现已支持多页生成、多话连续创作、单格重生成与本地图片直连预览。**
 
 **[English README →](./README_en.md)**
 
@@ -13,207 +13,249 @@
 
 ---
 
-MangaZine **绝不是**又一个简单的"文生图"套壳工具。
+MangaZine **不是**又一个“文生图”壳子。
 
-它是一个 **多智能体运行环境（Multi-Agent Runtime）+ 非破坏性编辑器**，旨在将漫画创作转化为一条结构化、可控、可追溯的工业级生产流水线。我们的目标受众是**有绝佳脑洞、懂分镜，却受限于手绘能力的创作者**——网文作者、剧本家、跑团玩家，以及每一个脑子里有个故事却苦于无从落笔的人。
+它的目标，是把漫画创作拆成一条可检查、可回放、可迭代的生产链：先有角色设定、风格 DNA、剧情节奏和页面布局，再落到单格提示词与图像生成，最后回到浏览器里做面向项目状态的重生成和修订。
 
-> 🎯 **MangaZine 让每个有故事的人，都能拥有一个浏览器里的漫画工作室。**
-
-我们坚信：**人类的精确控制是核心特性，而非技术降级。**
+> 🎯 **MangaZine 想给每个有故事的人，一个真正能工作的漫画工作室。**
 
 ---
 
 ## 💡 核心理念
 
-**1. 漫画是工程体系，而非提示词**  
-漫画的本质是连续生产过程——角色设定、故事节奏、分镜排版、对白修稿，环环相扣。一句提示词生不出一本漫画。
+**1. 漫画是生产流程，不是抽卡提示词**  
+角色、分镜、对白、风格、返工，本质上是一条连续的工程链。MangaZine 的设计重点，是让这条链路可追踪，而不是让用户不断重写提示词碰运气。
 
-**2. 多智能体各司其职，而非一个模型包打天下**  
-编剧 Agent 负责故事，分镜 Agent 负责节奏，提示词导演负责画面合成。每个 Agent 都有明确的职责边界与输出契约。
+**2. 多智能体分工，而不是单模型包打天下**  
+Writer 负责故事和对白，Storyboarder 负责页面节奏和布局，Prompt Director 负责把结构化状态转成稳定的图像提示词。
 
-**3. 结构化状态优先于纯文本**  
-所有中间产物（设定集、页面规格、单格提示词）均以严格类型的 JSON 结构固化，告别"盲盒式"抽卡，支持完整的版本回溯与确定性复现。
+**3. 结构化状态优先于自由文本**  
+`CharacterBible`、`StylePack`、`EpisodeOutline`、`PageSpec`、`PanelSpec` 都会固化成强类型 JSON，中间态可以保存、恢复、检查和继续编辑。
 
-**4. 开放的创作基础设施**  
-MangaZine 定位为可插拔的基础设施，支持多模型接入、多风格拓展，以及自定义工作流节点。
+**4. 非破坏式编辑优先于一次性生成**  
+生成不是终点。项目应当支持重新载入、局部重生成、尽量保持角色或风格，并保留修订历史。
 
 ---
 
-## ✨ 核心特性
+## ✨ 当前能力
 
-### 📖 多页多话连载制作（v0.2 新增）
-- **可变页数**：每话支持 1-20 页，通过 `--pages N` 参数控制
-- **16 种分格布局**：每页 3-8 个 panel，自动选择最佳布局模板（splash、grid、L-shape、cross 等）
-- **多话连续性**：通过 `--continue-from` 参数链接话数，自动继承角色设定和风格
-- **剧情记忆**：自动注入前 3 话摘要，保持故事连贯性
-- **独立输出**：每个项目自动创建时间戳文件夹，避免覆盖
+### 📖 多页、多话连载制作
+- 支持 `--pages N` 生成 1 到 20 页
+- 支持 `--continue-from` 继承上一个项目的角色与风格，继续创作后续话数
+- 自动注入前几话摘要，保持连续性
+- 每次运行创建独立输出目录，避免覆盖
 
-### 🎭 多智能体协作流水线
+### 🧠 多智能体流水线
 | Agent | 职责 |
 |---|---|
-| **WriterAgent（编剧）** | 生成角色圣经、分话大纲、对白草稿；内置 Critic 副程序自动检查叙事节奏 |
-| **StoryboarderAgent（分镜师）** | 将剧本转化为页面布局与分格规格；支持可变分格数量与动态布局选择 |
-| **PromptDirectorAgent（提示词导演）** | 确定性地合成最终图像生成提示词，自动注入角色视觉描述与风格关键词 |
+| **WriterAgent** | 生成角色圣经、话数大纲、对白草稿，并通过 Critic 子流程检查叙事节奏 |
+| **StoryboarderAgent** | 将剧情拆成多页分镜，自动选择布局模板，产出页面与 panel 规格 |
+| **PromptDirectorAgent** | 将 `PanelSpec + CharacterBible + StylePack` 合成为稳定的最终提示词 |
 
-### 🧬 风格基因系统（Style DNA）
-通过数值参数（线条粗细、黑白对比、网点密度、分格规律性等）精确定义画风，彻底规避版权风险，拒绝直接使用漫画家名字作为提示词。
+### 🧬 风格 DNA 系统
+`StylePack` 不依赖漫画家名字，而是使用线条粗细、对比度、网点密度、分格规律性、速度线强度、背景细节、色板和 tone keywords 等参数来定义风格语言。
 
-### 🛠️ 非破坏性单格修稿
-- **单页级 / 单格级**独立重绘，不影响其他页面
-- **锁定角色**：保持角色外观不变，仅修改动作或表情
-- **锁定构图**：保持分格网格不变，仅调整镜头语言（如将全景改为特写）
-- **修订历史**：每次重绘前自动将旧版本快照存入 `revision_history`，随时可回滚
+### 🛠️ 浏览器编辑器与非破坏式重生成
+- 首页可载入 `project_final.json`
+- 支持 episode 切换、页码切换、网格视图与键盘左右翻页
+- 点击 panel 打开侧栏，查看场景、角色、对白、提示词和修订历史
+- 支持单格 rerender，且请求会携带 `style_pack`、`character_bible` 与锁定约束
+- “尽量保持角色 / 风格 / 构图 / 对白” 仅作为提示词级约束，不承诺像素级硬锁定
+- 每次 rerender 前会将旧的 `RenderOutput` 推入 `revision_history`
 
-### 🗂️ 多后端模型接入（BYOK）
-支持多种 LLM 和图像生成后端：
+### 🖼️ 本地图片直连预览
+- CLI 生成的图片会写入 `generation_params.local_image_path`
+- 前端会优先使用 `render_output.image_url`
+- 如果 `image_url` 为空，但存在本地路径，则自动通过 `/api/project-image` 读取 `output/` 子树里的图片
+- `GET /api/project-image` 会拒绝绝对路径、`..` 穿越和非图片后缀
 
-**LLM 提供商：**
-- **Gemini**（默认）：`gemini-3.1-pro-preview`
-- **OpenAI**：`gpt-4o`
+### 🔌 多后端适配器（BYOK）
+**LLM：**
+- Gemini
+- OpenAI
 
-**图像生成提供商：**
-- **Gemini**（默认）：`gemini-3.1-flash-image-preview`（草稿）/ `gemini-3-pro-image-preview`（终稿）
-- **OpenAI**：`dall-e-3`
-- **Seedream**（字节豆包）：`seedream-v1`
+**Image：**
+- `adapters/gemini_image.py`
+- `adapters/openai_image.py`
+- `adapters/seedream_image.py`
 
-通过 `.env` 文件配置 `LLM_PROVIDER` 和 `IMAGE_PROVIDER` 即可切换
+这些适配器文件负责把统一的 `StylePack + prompt + aspect_ratio + reference images` 输入，翻译成各家图片模型能理解的请求，再把结果统一包装回 `GeneratedImageResult`，让上层流水线与前端无需关心具体供应商差异。
 
 ---
 
 ## 🏗️ 架构与数据流
 
+```text
+Idea
+  ↓
+CharacterBible + StylePack
+  ↓
+WriterAgent
+  ↓
+EpisodeOutline + Dialogue Draft
+  ↓
+StoryboarderAgent
+  ↓
+PageSpec / PanelSpec
+  ↓
+PromptDirectorAgent
+  ↓
+ImageAdapter (Gemini / OpenAI / Seedream)
+  ↓
+output/project_final.json + output/images/*
+  ↓
+Next.js Editor
+  ├─ GET /api/project-image      读取 output/ 下的本地图片
+  └─ POST /api/rerender-panel    调用 python -m cli.rerender_panel
 ```
-灵感 (Idea)
-  │
-  ▼
-设定集 (Story Bible)         ← CharacterBible + StylePack
-  │                              （多话复用：--continue-from）
-  ▼
-分话大纲 (Episode Outline)   ← WriterAgent + 剧情记忆注入
-  │                              （支持 1-20 页/话）
-  ▼
-对白草稿 (Dialogue Draft)    ← WriterAgent
-  │
-  ▼
-多页面规格 (Page Specs)      ← StoryboarderAgent + 16种布局模板
-  │                              （每页 3-8 panels，动态选择）
-  ▼
-单格提示词 (Panel Prompts)   ← PromptDirectorAgent（确定性合成）
-  │
-  ▼
-图像渲染 (Renders)           ← ImageAdapter → Gemini / OpenAI / Seedream
-  │                              （按页组织：page_01/panel_0.png）
-  ▼
-嵌字排版 → PDF / 条漫导出   ← [规划中]
-```
-
-所有中间产物均以 **Pydantic V2** 严格类型的 JSON 格式持久化，可随时暂停、检查、修改并继续。
 
 ---
 
 ## 📁 项目结构
 
-```
+```text
 MangaZine/
-├── models/
-│   ├── schemas.py            # 核心领域模型（Pydantic V2）
-│   └── layouts.py            # 16种布局模板配置（CSS Grid）
 ├── agents/
-│   ├── writer_agent.py       # 编剧 Agent + Critic 副程序
-│   ├── storyboarder_agent.py # 分镜 Agent + 视觉节奏校验
-│   └── prompt_director_agent.py  # 确定性提示词合成
+│   ├── prompt_director_agent.py
+│   ├── storyboarder_agent.py
+│   └── writer_agent.py
 ├── adapters/
-│   ├── base.py               # 抽象基类接口
-│   ├── factory.py            # 适配器工厂
-│   ├── gemini_llm.py         # Gemini LLM 适配器
-│   ├── gemini_image.py       # Gemini 图像适配器
-│   ├── openai_llm.py         # OpenAI LLM 适配器
-│   ├── openai_image.py       # OpenAI DALL-E 适配器
-│   └── seedream_image.py     # Seedream 图像适配器
-├── components/               # Next.js React 组件
-│   ├── ComicCanvas.tsx       # 可变布局页面渲染器
-│   ├── MultiPageViewer.tsx   # 多页导航组件
-│   └── PanelEditorSidebar.tsx  # 非破坏性编辑侧栏
+│   ├── base.py
+│   ├── factory.py
+│   ├── gemini_image.py
+│   ├── gemini_llm.py
+│   ├── openai_image.py
+│   ├── openai_llm.py
+│   └── seedream_image.py
+├── app/
+│   ├── api/
+│   │   ├── project-image/route.ts
+│   │   └── rerender-panel/route.ts
+│   ├── layout.tsx
+│   └── page.tsx
+├── cli/
+│   ├── image_paths.py
+│   ├── rerender_panel.py
+│   └── run_pipeline.py
+├── components/
+│   ├── ComicCanvas.tsx
+│   ├── MultiPageViewer.tsx
+│   └── PanelEditorSidebar.tsx
 ├── lib/
-│   └── layoutConfigs.ts      # 前端布局配置
+│   ├── layoutConfigs.ts
+│   ├── projectImageServer.ts
+│   └── projectImageUrl.ts
+├── models/
+│   ├── layouts.py
+│   └── schemas.py
 ├── store/
-│   └── comicStore.ts         # Zustand 全局状态管理
+│   └── comicStore.ts
 ├── types/
-│   └── comic.ts              # TypeScript 类型定义
-├── config.py                 # 多后端配置管理
-└── cli/
-    └── run_pipeline.py       # 命令行多页多话流水线
+│   └── comic.ts
+├── config.py
+├── next.config.js
+└── package.json
 ```
 
 ---
 
 ## 🚀 快速开始
 
-> ⚠️ MangaZine 目前处于高强度开发阶段，v0.2 已支持多页多话连载制作。
+### 1. 安装依赖
 
 ```bash
-# 克隆仓库
 git clone git@github.com:HeroBlast10/MangaZine.git
 cd MangaZine
 
-# 安装后端依赖
 pip install -r requirements.txt
+npm install
+```
 
-# 配置 API Key（一次性设置）
-# 1. 复制 .env 模板文件
+### 2. 配置环境变量
+
+```bash
 copy .env.example .env
+```
 
-# 2. 编辑 .env 文件，配置后端服务商
-#    支持的 LLM: gemini (默认), openai
-#    支持的 Image: gemini (默认), openai, seedream
-#    示例：
-#      LLM_PROVIDER=gemini
-#      IMAGE_PROVIDER=gemini
-#      GOOGLE_API_KEY=your-actual-key
+在 `.env` 中配置：
 
-# 3. 填入对应服务商的 API Key
-#    - Google AI Studio: https://aistudio.google.com/app/apikey
-#    - OpenAI: https://platform.openai.com/api-keys
-#    - Seedream (字节豆包): https://console.volcengine.com/ark
+```env
+LLM_PROVIDER=gemini
+IMAGE_PROVIDER=gemini
+GOOGLE_API_KEY=your-key
+OPENAI_API_KEY=
+SEEDREAM_API_KEY=
+```
 
-# 运行 CLI 流水线（生成多页漫画）
-# 每次运行会自动创建独立的时间戳文件夹，避免覆盖
+可选项：
 
-# 生成单页漫画（默认）
+```env
+# 前端 route 调用 Python 时默认使用 `python`
+# 如果你的环境需要指定解释器，可覆盖它
+PYTHON_EXECUTABLE=python
+```
+
+### 3. 运行 CLI 生成项目
+
+```bash
+# 默认生成单页项目
 python cli/run_pipeline.py "赛博朋克大厨用激光锅铲对决美食评论家"
 
-# 生成 15 页漫画（第 1 话）
-python cli/run_pipeline.py "发福的退休杀手大叔开了便利店" --pages 15
+# 生成 15 页的第 1 话
+python cli/run_pipeline.py "发福的退休杀手开了一家便利店" --pages 15
 
-# 继续创作第 2 话（自动继承角色和风格）
+# 基于已有项目继续生成下一话
 python cli/run_pipeline.py "第2话：神秘顾客登场" --continue-from output/20250322_090000_发福的退休杀手/project_final.json --pages 18
+```
 
-# 安装前端依赖并启动开发服务器
-npm install
+### 4. 启动前端编辑器
+
+```bash
 npm run dev
 ```
 
-**流水线输出（多页模式）：**
-```
-output/20250322_090000_发福的退休杀手/
-├── project_final.json           # 完整项目状态（可随时恢复）
+浏览器打开 `http://localhost:3000` 后：
+
+1. 载入 `output/.../project_final.json`
+2. 在首页切换不同 episode 和 page
+3. 点击 panel 打开侧栏
+4. 修改临时提示词或锁定选项
+5. 点击“重新生成当前分镜”
+
+---
+
+## 📦 输出结构
+
+```text
+output/20260326_153000_示例项目/
+├── project_final.json
 ├── images/
-│   ├── page_01/                 # 第 1 页
+│   ├── page_01/
 │   │   ├── panel_0.png
 │   │   ├── panel_1.png
-│   │   ├── panel_2.png
-│   │   └── panel_3.png
-│   ├── page_02/                 # 第 2 页
-│   │   ├── panel_0.png
-│   │   ├── panel_1.png
-│   │   ├── panel_2.png
-│   │   ├── panel_3.png
-│   │   └── panel_4.png          # 可变分格数量
-│   └── ...
+│   │   └── ...
+│   └── page_02/
+├── rerenders/
+│   └── <page_id>/
+│       └── <panel_id>/
+│           └── 20260326T153522.png
 └── checkpoints/
-    ├── 01_character_bible.json  # 角色设定（多话复用）
-    ├── 02_episode_outline.json  # 话数大纲
-    └── 03_page_specs.json       # 所有页面规格
+    ├── 01_character_bible.json
+    ├── 02_episode_outline.json
+    └── 03_page_specs.json
+```
+
+`project_final.json` 是整个项目的恢复点；`images/` 是流水线初次生成结果；`rerenders/` 保存前端局部重生成产生的新版本。
+
+---
+
+## ✅ 质量检查
+
+```bash
+npm run type-check
+npm run lint
+npm run build
+python -m compileall adapters agents cli models config.py
 ```
 
 ---
@@ -222,10 +264,22 @@ output/20250322_090000_发福的退休杀手/
 
 | 层级 | 技术 |
 |---|---|
-| 后端 | Python 3.11+，FastAPI，Pydantic V2 |
-| AI SDK | Google GenAI SDK |
-| 前端 | Next.js 14（App Router），React，Tailwind CSS，Zustand |
-| 状态管理 | Zustand + Immer（前端） / Pydantic JSON（后端） |
+| 后端 | Python 3.11+、Pydantic v2、本地 Python route bridge |
+| 前端 | Next.js 14（App Router）、React、Tailwind CSS |
+| 状态管理 | Zustand + Immer |
+| 图像接入 | Gemini / OpenAI / Seedream 适配器层 |
+| 项目模型 | `CharacterBible` / `StylePack` / `PageSpec` / `RenderOutput` |
+
+---
+
+## 🗺️ Roadmap
+
+- [x] v0.1：核心 CLI 流水线 + 基础前端编辑器
+- [x] v0.2：多页生成 + 多话连续性 + 16 种布局模板
+- [x] 本地图片直连预览 + 单格 rerender route
+- [ ] StylePack 可视化编辑器
+- [ ] 嵌字 / PDF / 条漫导出
+- [ ] 更完整的审阅工作流
 
 ---
 

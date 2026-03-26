@@ -6,6 +6,8 @@ Defines abstract interfaces that all LLM and Image providers must implement.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Type, TypeVar
 
 from pydantic import BaseModel
@@ -13,6 +15,16 @@ from pydantic import BaseModel
 from models.schemas import StylePack
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass
+class GeneratedImageResult:
+    """Container for image bytes plus reproducibility metadata."""
+
+    image_bytes: bytes
+    model_used: str
+    generation_params: dict[str, object] = field(default_factory=dict)
+    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class BaseLLMAdapter(ABC):
@@ -111,7 +123,7 @@ class BaseImageAdapter(ABC):
         reference_images: list[str] | None = None,
         draft_mode: bool = True,
         aspect_ratio: str = "1:1",
-    ) -> bytes:
+    ) -> GeneratedImageResult:
         """
         Generate a manga panel image from a text prompt.
         
@@ -130,8 +142,8 @@ class BaseImageAdapter(ABC):
         
         Returns
         -------
-        bytes
-            PNG image data.
+        GeneratedImageResult
+            Image bytes plus model metadata.
         
         Raises
         ------
@@ -147,7 +159,7 @@ class BaseImageAdapter(ABC):
         style_pack: StylePack,
         reference_images: list[str] | None = None,
         draft_mode: bool = True,
-    ) -> list[bytes]:
+    ) -> list[GeneratedImageResult]:
         """
         Generate multiple panel images in parallel.
         
@@ -167,8 +179,8 @@ class BaseImageAdapter(ABC):
         
         Returns
         -------
-        list[bytes]
-            List of PNG image data.
+        list[GeneratedImageResult]
+            List of image results.
         """
         pass
 
