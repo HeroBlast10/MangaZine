@@ -1,166 +1,198 @@
-# MangaZine 🖋️
+<p align="center">
+  <img src="https://img.shields.io/badge/MangaZine-v0.3.0-7C3AED?style=for-the-badge" alt="MangaZine" />
+</p>
 
-> **Comics are production systems, not single prompts.**  
-> An open-source multi-agent framework and browser editor for AI manga creation.  
-> **Now supports multi-page generation, serialized episodes, panel rerendering, and local image preview.**
+<h1 align="center">MangaZine</h1>
 
-**[中文 README →](./README.md)**
+<p align="center">
+  <strong>Production-Grade Multi-Agent Manga Creation System</strong><br/>
+  Comics are engineering systems, not single prompts.
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Next.js 14](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
-[![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-e92063)](https://docs.pydantic.dev/latest/)
+<p align="center">
+  <a href="./README.md"><strong>中文 README →</strong></a>
+</p>
 
----
-
-MangaZine is **not** another text-to-image wrapper.
-
-It is built around a different idea: manga creation should be a traceable production pipeline. Character design, style DNA, episode memory, page layouts, panel prompts, rerendering, and revision history should all live in a structured project model instead of disappearing into one-off prompts.
-
-> 🎯 **MangaZine aims to give every storyteller a browser-based manga studio that actually works like a studio.**
-
----
-
-## 💡 Core Philosophy
-
-**1. Comics are production pipelines, not prompt lotteries**  
-Real comic work is iterative. Character consistency, page rhythm, dialogue, visual composition, and revision all matter. The system is designed to expose and preserve those steps.
-
-**2. Specialised agents beat one giant “do everything” model**  
-The Writer handles story and dialogue. The Storyboarder handles pacing and layouts. The Prompt Director turns structured state into deterministic image prompts.
-
-**3. Structured state beats raw text blobs**  
-`CharacterBible`, `StylePack`, `EpisodeOutline`, `PageSpec`, and `PanelSpec` are stored as typed JSON so the project can be resumed, inspected, edited, and rerendered safely.
-
-**4. Non-destructive editing matters more than one-shot generation**  
-The first image is only a draft. The editor should support local rerenders, best-effort preserve controls, and revision history without destroying the rest of the project.
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT" /></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python" /></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-14-black" alt="Next.js" /></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-0.111+-009688" alt="FastAPI" /></a>
+  <a href="https://docs.pydantic.dev/"><img src="https://img.shields.io/badge/Pydantic-v2-e92063" alt="Pydantic" /></a>
+  <img src="https://img.shields.io/badge/tests-35%20passed-brightgreen" alt="Tests" />
+</p>
 
 ---
 
-## ✨ Current Capabilities
+## What Problem Does This Solve?
 
-### 📖 Multi-Page, Multi-Episode Production
-- Generate 1 to 20 pages with `--pages N`
-- Continue later episodes with `--continue-from`
-- Reuse character and style state across episodes
-- Inject summaries from previous episodes to preserve story continuity
-- Write each run into its own timestamped output directory
+Every AI image tool today is a **single-image slot machine** — type a prompt, get one picture. But manga is not a collection of standalone images. It is an intricate engineering chain of **characters × style × narrative × storyboarding × composition × iteration**.
 
-### 🧠 Multi-Agent Production Pipeline
-| Agent | Responsibility |
+MangaZine decomposes this chain into **4 specialised agents + 1 orchestration engine**, making every step inspectable, recoverable, and iterable:
+
+```
+Premise → WriterAgent (characters / outline / dialogue / self-critique)
+        → StoryboarderAgent (page layouts / visual rhythm validation)
+        → PromptDirectorAgent (deterministic prompt synthesis)
+        → ImageAdapter (multi-model rendering)
+        → QualityReviewerAgent (Vision LLM quality gate + auto-retry)
+```
+
+> When an interviewer asks "how do your agents collaborate?", you can walk through the code line by line — because the architecture diagram in the README **matches the implementation exactly**.
+
+---
+
+## Key Highlights
+
+### 1. State-Machine-Driven Agent Orchestrator
+
+Not a 500-line `async` function. A real **finite state machine + event-driven** orchestration engine:
+
+```python
+PipelineState: INIT → STYLE_PACK → CHARACTER_BIBLE → EPISODE_OUTLINE
+             → STORYBOARD → PROMPT_SYNTHESIS → IMAGE_GENERATION → ASSEMBLY → COMPLETED
+```
+
+- Each state transition calls the corresponding Agent's `.run()` method
+- `EventBus` async pub-sub — the frontend consumes events in real time via SSE
+- `CheckpointManager` saves after every step — supports resume from any checkpoint
+- Agents are injected via `BaseLLMAdapter` interface — swap mock / Gemini / OpenAI in one line
+
+### 2. Four Specialised Agents
+
+| Agent | Responsibility | Key Capability |
+|---|---|---|
+| **WriterAgent** | Character bible, episode outline, dialogue draft | Critic self-review loop (up to 2 revision rounds), narrative pacing check |
+| **StoryboarderAgent** | Multi-page layouts, template selection | Visual rhythm validation (limits wide-shot density), auto-correction |
+| **PromptDirectorAgent** | PanelSpec + StylePack + CharacterBible → prompt | Fully deterministic, zero LLM calls, 100% unit-testable |
+| **QualityReviewerAgent** | Post-generation Vision LLM assessment | 5-dimension scoring + auto prompt refinement + retry |
+
+### 3. End-to-End Observability
+
+```
+Trace: pipeline_run_abc123
+  ├─ Span: WriterAgent.character_bible     (2.3s, 1200 tokens, $0.0021)
+  ├─ Span: WriterAgent.critic_review       (1.8s, 800 tokens, $0.0014)
+  ├─ Span: StoryboarderAgent.page_1        (2.5s, 1600 tokens, $0.0028)
+  ├─ Span: PromptDirectorAgent.synthesize  (0.01s, deterministic)
+  └─ Span: ImageAdapter.render_panel_1     (8.2s)
+```
+
+- **TokenTracker**: Automatically records input/output token counts, latency, and estimated cost for every LLM call
+- **AgentMessage protocol**: `trace_id` for end-to-end tracing + `parent_message_id` for causal chains
+- **OpenTelemetry**: Export spans to Jaeger / Zipkin; graceful no-op fallback when the SDK is not installed
+
+### 4. FastAPI Backend + SSE Streaming
+
+Replaces the `child_process.spawn` workaround with a proper Python API server:
+
+| Endpoint | Purpose |
 |---|---|
-| **WriterAgent** | Builds the Character Bible, episode outline, and dialogue draft, then reviews narrative pacing through a Critic sub-flow |
-| **StoryboarderAgent** | Expands the story into pages and panels, selecting layout templates automatically |
-| **PromptDirectorAgent** | Combines `PanelSpec + CharacterBible + StylePack` into deterministic image prompts |
+| `POST /api/v1/pipeline/run` | SSE event stream — track every Agent step in real time |
+| `POST /api/v1/panel/rerender` | Single-panel rerender |
+| `GET /api/v1/projects` | List all projects |
+| `GET /api/v1/project/{path}` | Retrieve a project |
 
-### 🧬 Style DNA System
-`StylePack` encodes style with numeric and categorical controls such as line weight, contrast, screentone density, panel regularity, speed-line intensity, background detail, palette, and tone keywords. The point is to define style behavior, not to imitate a named artist.
+### 5. 35 Automated Tests
 
-### 🛠️ Browser Editor and Non-Destructive Rerendering
-- Load an existing `project_final.json` directly in the homepage
-- Switch episodes, switch pages, use grid view, and flip pages with keyboard arrows
-- Click a panel to open a sidebar with scene info, dialogue, prompt plan, and revision history
-- Rerender a single panel with full `style_pack`, `character_bible`, and lock constraints
-- “Preserve character / style / composition / dialogue” is implemented as a prompt-level best effort, not pixel-level image editing
-- Every rerender snapshots the previous `RenderOutput` into `revision_history`
+```
+tests/
+├── unit/
+│   ├── test_prompt_director.py     # 13 tests — deterministic logic, 100% coverage
+│   ├── test_writer_agent.py        # 4 tests — Critic loop control flow
+│   ├── test_storyboarder_agent.py  # 7 tests — visual rhythm validation
+│   ├── test_orchestrator.py        # 4 tests — state machine + EventBus
+│   └── test_middleware.py          # 5 tests — TokenTracker
+├── integration/
+│   └── test_pipeline_e2e.py        # 2 tests — full pipeline with mock adapters
+└── conftest.py                     # MockLLMAdapter + MockImageAdapter
+```
 
-### 🖼️ Local Image Preview
-- The CLI stores generated file paths in `generation_params.local_image_path`
-- The frontend prefers `render_output.image_url`
-- If `image_url` is missing but a local path exists, the UI resolves it through `/api/project-image`
-- `GET /api/project-image` only serves files inside `output/` and rejects path traversal, absolute paths, and non-image suffixes
+### 6. Frontend Pipeline Console
 
-### 🔌 Multi-Backend Adapter Layer (BYOK)
-**LLM:**
-- Gemini
-- OpenAI
+The `/pipeline` page drives the entire Agent pipeline from the browser:
 
-**Image:**
-- `adapters/gemini_image.py`
-- `adapters/openai_image.py`
-- `adapters/seedream_image.py`
-
-These adapter modules translate a shared internal contract (`prompt + StylePack + aspect_ratio + reference images`) into provider-specific API requests, then normalize the results back into `GeneratedImageResult`. That keeps the rest of the pipeline provider-agnostic.
+- Enter a story premise + page count, hit "Start Pipeline"
+- 7-step Agent chain visualisation with live progress indicators
+- SSE real-time event log with colour-coded entries
+- Cost dashboard: LLM calls, total tokens, estimated USD cost, total latency
 
 ---
 
-## 🏗️ Architecture & Data Flow
+## Architecture & Data Flow
 
 ```text
-Idea
-  ↓
-CharacterBible + StylePack
-  ↓
-WriterAgent
-  ↓
-EpisodeOutline + Dialogue Draft
-  ↓
-StoryboarderAgent
-  ↓
-PageSpec / PanelSpec
-  ↓
-PromptDirectorAgent
-  ↓
-ImageAdapter (Gemini / OpenAI / Seedream)
-  ↓
-output/project_final.json + output/images/*
-  ↓
-Next.js Editor
-  ├─ GET /api/project-image      serves local files from output/
-  └─ POST /api/rerender-panel    calls python -m cli.rerender_panel
+                         ┌──────────────────────────────────────────┐
+                         │           PipelineOrchestrator           │
+                         │     (State Machine + EventBus + CP)      │
+                         └──┬────────┬────────┬────────┬───────┬───┘
+                            │        │        │        │       │
+                         ┌──▼──┐  ┌──▼──┐  ┌──▼──┐ ┌──▼──┐ ┌──▼──┐
+                         │Write│  │Story│  │Prompt│ │Image│ │QualR│
+                         │Agent│  │board│  │Direc│ │Adapt│ │eview│
+                         └──┬──┘  └──┬──┘  └──┬──┘ └──┬──┘ └──┬──┘
+                            │        │        │        │       │
+                    ┌───────▼────────▼────────▼────────▼───────▼───┐
+                    │              BaseLLMAdapter                   │
+                    │        (TrackedLLMAdapter wrapper)            │
+                    │    Gemini  │  OpenAI  │  Mock (testing)       │
+                    └──────────────────────────────────────────────┘
+                                        │
+                    ┌───────────────────▼───────────────────────────┐
+                    │                FastAPI Server                  │
+                    │   SSE /pipeline/run  │  /panel/rerender       │
+                    └───────────────────┬───────────────────────────┘
+                                        │
+                    ┌───────────────────▼───────────────────────────┐
+                    │          Next.js 14 Frontend                  │
+                    │   Pipeline Console  │  Comic Viewer/Editor    │
+                    └──────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 MangaZine/
+├── orchestrator/               # Orchestration engine (v0.3)
+│   ├── pipeline.py             #   State machine + PipelineOrchestrator
+│   ├── events.py               #   EventBus + PipelineEvent
+│   ├── messages.py             #   AgentMessage protocol
+│   ├── checkpoint.py           #   Checkpoint save / restore
+│   └── tracing.py              #   OpenTelemetry integration
 ├── agents/
-│   ├── prompt_director_agent.py
-│   ├── storyboarder_agent.py
-│   └── writer_agent.py
+│   ├── writer_agent.py         #   WriterAgent (Critic self-review)
+│   ├── storyboarder_agent.py   #   StoryboarderAgent (rhythm check)
+│   ├── prompt_director_agent.py#   PromptDirectorAgent (deterministic)
+│   └── quality_reviewer_agent.py#  QualityReviewerAgent (v0.3)
 ├── adapters/
-│   ├── base.py
-│   ├── factory.py
-│   ├── gemini_image.py
-│   ├── gemini_llm.py
-│   ├── openai_image.py
-│   ├── openai_llm.py
+│   ├── base.py                 #   BaseLLMAdapter / BaseImageAdapter
+│   ├── factory.py              #   Adapter factory
+│   ├── middleware.py           #   TokenTracker (v0.3)
+│   ├── gemini_llm.py / gemini_image.py
+│   ├── openai_llm.py / openai_image.py
 │   └── seedream_image.py
-├── app/
-│   ├── api/
-│   │   ├── project-image/route.ts
-│   │   └── rerender-panel/route.ts
-│   ├── layout.tsx
-│   └── page.tsx
-├── cli/
-│   ├── image_paths.py
-│   ├── rerender_panel.py
-│   └── run_pipeline.py
-├── components/
-│   ├── ComicCanvas.tsx
-│   ├── MultiPageViewer.tsx
-│   └── PanelEditorSidebar.tsx
-├── lib/
-│   ├── layoutConfigs.ts
-│   ├── projectImageServer.ts
-│   └── projectImageUrl.ts
-├── models/
-│   ├── layouts.py
-│   └── schemas.py
-├── store/
-│   └── comicStore.ts
-├── types/
-│   └── comic.ts
-├── config.py
-├── next.config.js
-└── package.json
+├── server/                     # FastAPI backend (v0.3)
+│   ├── main.py                 #   /api/v1/* endpoints
+│   └── schemas.py              #   Request / response models
+├── tests/                      # Test suite (v0.3)
+│   ├── unit/                   #   5 test modules
+│   ├── integration/            #   E2E mock tests
+│   └── conftest.py             #   Shared fixtures
+├── app/                        # Next.js 14 frontend
+│   ├── page.tsx                #   Home + project viewer
+│   └── pipeline/page.tsx       #   Pipeline console (v0.3)
+├── cli/run_pipeline.py         # CLI entry point (v0.3 rewrite)
+├── .github/workflows/ci.yml   # GitHub Actions CI
+├── Dockerfile                  # Multi-stage build
+├── docker-compose.yml          # One-command deployment
+└── CHANGELOG.md                # Release notes
 ```
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Install Dependencies
 
@@ -172,118 +204,86 @@ pip install -r requirements.txt
 npm install
 ```
 
-### 2. Configure Environment Variables
+### 2. Configure Environment
 
 ```bash
 cp .env.example .env
 ```
 
-Set the providers you want in `.env`:
-
 ```env
-LLM_PROVIDER=gemini
-IMAGE_PROVIDER=gemini
+LLM_PROVIDER=gemini          # or openai
+IMAGE_PROVIDER=gemini         # or openai / seedream
 GOOGLE_API_KEY=your-key
-OPENAI_API_KEY=
-SEEDREAM_API_KEY=
 ```
 
-Optional:
-
-```env
-# The Next.js rerender route uses `python` by default.
-# Override this if your local environment requires a specific interpreter.
-PYTHON_EXECUTABLE=python
-```
-
-### 3. Run the CLI Pipeline
+### 3. CLI Generation
 
 ```bash
-# Default: single-page project
+# Single page
 python cli/run_pipeline.py "A cyberpunk chef fights food critics with a laser spatula"
 
-# Generate a 15-page Episode 1
+# 15-page episode
 python cli/run_pipeline.py "A retired assassin opens a convenience store" --pages 15
 
-# Continue from an existing project
-python cli/run_pipeline.py "Episode 2: A mysterious customer arrives" --continue-from output/20250322_090000_A_retired_assassin/project_final.json --pages 18
+# Continue episode 2
+python cli/run_pipeline.py "Episode 2: A mysterious customer" \
+  --continue-from output/.../project_final.json --pages 18
 ```
 
-### 4. Start the Browser Editor
+### 4. Start FastAPI Backend (optional)
+
+```bash
+uvicorn server.main:app --reload --port 8000
+```
+
+### 5. Start Frontend
 
 ```bash
 npm run dev
 ```
 
-Then open `http://localhost:3000` and:
+Open `http://localhost:3000`, load a project or navigate to `/pipeline` to start online generation.
 
-1. Load `output/.../project_final.json`
-2. Switch episodes and pages
-3. Click a panel to open the editor sidebar
-4. Adjust the temporary prompt or preserve controls
-5. Click “Rerender Current Panel”
-
----
-
-## 📦 Output Layout
-
-```text
-output/20260326_153000_example_project/
-├── project_final.json
-├── images/
-│   ├── page_01/
-│   │   ├── panel_0.png
-│   │   ├── panel_1.png
-│   │   └── ...
-│   └── page_02/
-├── rerenders/
-│   └── <page_id>/
-│       └── <panel_id>/
-│           └── 20260326T153522.png
-└── checkpoints/
-    ├── 01_character_bible.json
-    ├── 02_episode_outline.json
-    └── 03_page_specs.json
-```
-
-`project_final.json` is the resumable project state. `images/` contains the initial pipeline renders. `rerenders/` stores panel-level revisions created from the frontend editor.
-
----
-
-## ✅ Quality Checks
+### 6. Docker Deployment
 
 ```bash
-npm run type-check
-npm run lint
-npm run build
-python -m compileall adapters agents cli models config.py
+docker-compose up --build
+```
+
+### 7. Run Tests
+
+```bash
+python -m pytest tests/ -v
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.11+, Pydantic v2, local Python route bridge |
-| Frontend | Next.js 14 (App Router), React, Tailwind CSS |
-| State | Zustand + Immer |
-| Image Integration | Gemini / OpenAI / Seedream adapter layer |
-| Project Model | `CharacterBible` / `StylePack` / `PageSpec` / `RenderOutput` |
+| Orchestration | Finite State Machine + EventBus + Checkpoint |
+| Agent Layer | WriterAgent / StoryboarderAgent / PromptDirectorAgent / QualityReviewerAgent |
+| Backend | Python 3.11+, FastAPI, Pydantic v2, SSE |
+| Frontend | Next.js 14 (App Router), React 18, Tailwind CSS, Zustand |
+| Observability | TokenTracker, AgentMessage Protocol, OpenTelemetry |
+| Image Providers | Gemini / OpenAI / Seedream adapter layer |
+| Testing | Pytest + MockLLMAdapter + MockImageAdapter (35 tests) |
+| CI/CD | GitHub Actions + Docker Compose |
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] v0.1: Core CLI pipeline + basic frontend editor
 - [x] v0.2: Multi-page generation + multi-episode continuity + 16 layout templates
-- [x] Local image preview + panel rerender route
-- [ ] Visual StylePack editor
-- [ ] Typesetting / PDF / webtoon export
-- [ ] Richer review workflow
+- [x] **v0.3: Agent orchestrator + observability + FastAPI + QualityReviewer + tests + CI/CD + Pipeline console**
+- [ ] v0.4: Visual StylePack editor
+- [ ] v0.5: Typesetting / PDF / webtoon export
+- [ ] v0.6: Parallel agent scheduling + DAG orchestration
 
 ---
 
-## 📄 License
+## License
 
 This project is open-source under the [MIT License](./LICENSE).

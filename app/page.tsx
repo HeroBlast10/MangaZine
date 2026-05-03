@@ -5,10 +5,12 @@ import {
   BookOpen,
   Layers,
   Palette,
+  Play,
   Sparkles,
   Upload,
   Users,
 } from 'lucide-react';
+import Link from 'next/link';
 
 import { MultiPageViewer } from '@/components/MultiPageViewer';
 import { PanelEditorSidebar } from '@/components/PanelEditorSidebar';
@@ -112,9 +114,18 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <span className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-500">
-            v0.1.0-alpha
-          </span>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/pipeline"
+              className="flex items-center gap-1.5 rounded-lg border border-violet-700 bg-violet-900/30 px-3 py-1.5 text-xs font-medium text-violet-300 transition-colors hover:bg-violet-800/50"
+            >
+              <Play size={12} />
+              Pipeline 控制台
+            </Link>
+            <span className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-500">
+              v0.3.0
+            </span>
+          </div>
         </div>
       </header>
 

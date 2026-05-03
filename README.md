@@ -1,165 +1,196 @@
-# MangaZine 🖋️
+<p align="center">
+  <img src="https://img.shields.io/badge/MangaZine-v0.3.0-7C3AED?style=for-the-badge" alt="MangaZine" />
+</p>
 
-> **漫画是工程体系，而不是一句提示词。**  
-> 面向 AI 漫画创作的开源多智能体框架与浏览器编辑器。  
-> **现已支持多页生成、多话连续创作、单格重生成与本地图片直连预览。**
+<h1 align="center">MangaZine</h1>
 
-**[English README →](./README_en.md)**
+<p align="center">
+  <strong>生产级多 Agent 协作漫画创作系统</strong><br/>
+  漫画是一整套工程体系，而不是一句提示词。
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Next.js 14](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
-[![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-e92063)](https://docs.pydantic.dev/latest/)
+<p align="center">
+  <a href="./README_en.md"><strong>English README →</strong></a>
+</p>
 
----
-
-MangaZine **不是**又一个“文生图”壳子。
-
-它的目标，是把漫画创作拆成一条可检查、可回放、可迭代的生产链：先有角色设定、风格 DNA、剧情节奏和页面布局，再落到单格提示词与图像生成，最后回到浏览器里做面向项目状态的重生成和修订。
-
-> 🎯 **MangaZine 想给每个有故事的人，一个真正能工作的漫画工作室。**
-
----
-
-## 💡 核心理念
-
-**1. 漫画是生产流程，不是抽卡提示词**  
-角色、分镜、对白、风格、返工，本质上是一条连续的工程链。MangaZine 的设计重点，是让这条链路可追踪，而不是让用户不断重写提示词碰运气。
-
-**2. 多智能体分工，而不是单模型包打天下**  
-Writer 负责故事和对白，Storyboarder 负责页面节奏和布局，Prompt Director 负责把结构化状态转成稳定的图像提示词。
-
-**3. 结构化状态优先于自由文本**  
-`CharacterBible`、`StylePack`、`EpisodeOutline`、`PageSpec`、`PanelSpec` 都会固化成强类型 JSON，中间态可以保存、恢复、检查和继续编辑。
-
-**4. 非破坏式编辑优先于一次性生成**  
-生成不是终点。项目应当支持重新载入、局部重生成、尽量保持角色或风格，并保留修订历史。
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT" /></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python" /></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-14-black" alt="Next.js" /></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-0.111+-009688" alt="FastAPI" /></a>
+  <a href="https://docs.pydantic.dev/"><img src="https://img.shields.io/badge/Pydantic-v2-e92063" alt="Pydantic" /></a>
+  <img src="https://img.shields.io/badge/tests-35%20passed-brightgreen" alt="Tests" />
+</p>
 
 ---
 
-## ✨ 当前能力
+## 这个项目解决什么问题？
 
-### 📖 多页、多话连载制作
-- 支持 `--pages N` 生成 1 到 20 页
-- 支持 `--continue-from` 继承上一个项目的角色与风格，继续创作后续话数
-- 自动注入前几话摘要，保持连续性
-- 每次运行创建独立输出目录，避免覆盖
+市面上的 AI 图像工具都是**单图抽卡**模式——输入一句提示词，等待一张图。但漫画不是单张图片的集合，它是**角色 × 风格 × 叙事 × 分镜 × 构图 × 迭代**的复杂工程链。
 
-### 🧠 多智能体流水线
-| Agent | 职责 |
+MangaZine 将这条链路拆解为**4 个专职 Agent + 1 套编排引擎**，让每个环节可检查、可回退、可迭代：
+
+```
+故事前提 → WriterAgent（角色/大纲/对白/自审） → StoryboarderAgent（分镜/节奏校验）
+         → PromptDirectorAgent（确定性提示词合成） → ImageAdapter（多模型渲染）
+         → QualityReviewerAgent（Vision LLM 质量门控 + 自动重生成）
+```
+
+> 面试官问你"Agent 之间怎么协作的"，你可以打开代码逐行回答——因为 README 描述的架构图和代码实现**完全一致**。
+
+---
+
+## 核心亮点
+
+### 1. 状态机驱动的 Agent 编排引擎
+
+不是一个 500 行的 `async` 函数，而是真正的**有限状态机 + 事件驱动**编排：
+
+```python
+PipelineState: INIT → STYLE_PACK → CHARACTER_BIBLE → EPISODE_OUTLINE
+             → STORYBOARD → PROMPT_SYNTHESIS → IMAGE_GENERATION → ASSEMBLY → COMPLETED
+```
+
+- 每个状态转换真正调用对应 Agent 的 `.run()` 方法
+- `EventBus` 异步发布-订阅，前端通过 SSE 实时消费
+- `CheckpointManager` 每步自动保存，支持断点恢复
+- Agent 通过 `BaseLLMAdapter` 接口注入，一行代码切换 mock / Gemini / OpenAI
+
+### 2. 四大专职 Agent
+
+| Agent | 职责 | 关键能力 |
+|---|---|---|
+| **WriterAgent** | 角色圣经、剧情大纲、对白草稿 | Critic 自审循环（最多 2 轮修订），叙事节奏检查 |
+| **StoryboarderAgent** | 多页分镜、布局模板选择 | 视觉节奏校验（限制广角镜头密度），自动修正 |
+| **PromptDirectorAgent** | PanelSpec + StylePack + CharacterBible → 提示词 | 完全确定性，零 LLM 调用，100% 可测试 |
+| **QualityReviewerAgent** | Vision LLM 后生成评估 | 5 维评分 + 自动 prompt refinement + 重生成 |
+
+### 3. 全链路可观测性
+
+```
+Trace: pipeline_run_abc123
+  ├─ Span: WriterAgent.character_bible     (2.3s, 1200 tokens, $0.0021)
+  ├─ Span: WriterAgent.critic_review       (1.8s, 800 tokens, $0.0014)
+  ├─ Span: StoryboarderAgent.page_1        (2.5s, 1600 tokens, $0.0028)
+  ├─ Span: PromptDirectorAgent.synthesize  (0.01s, deterministic)
+  └─ Span: ImageAdapter.render_panel_1     (8.2s)
+```
+
+- **TokenTracker**：每次 LLM 调用自动记录 input/output token 数、延迟、成本估算
+- **AgentMessage 协议**：trace_id 全链路追踪 + parent_message_id 因果链
+- **OpenTelemetry**：可导出到 Jaeger / Zipkin，未安装 SDK 时 no-op 降级
+
+### 4. FastAPI 后端 + SSE 实时流
+
+彻底替代 `child_process.spawn` 的临时方案：
+
+| 端点 | 功能 |
 |---|---|
-| **WriterAgent** | 生成角色圣经、话数大纲、对白草稿，并通过 Critic 子流程检查叙事节奏 |
-| **StoryboarderAgent** | 将剧情拆成多页分镜，自动选择布局模板，产出页面与 panel 规格 |
-| **PromptDirectorAgent** | 将 `PanelSpec + CharacterBible + StylePack` 合成为稳定的最终提示词 |
+| `POST /api/v1/pipeline/run` | SSE 流式事件推送，实时追踪每个 Agent 步骤 |
+| `POST /api/v1/panel/rerender` | 单格重生成 |
+| `GET /api/v1/projects` | 项目列表 |
+| `GET /api/v1/project/{path}` | 项目详情 |
 
-### 🧬 风格 DNA 系统
-`StylePack` 不依赖漫画家名字，而是使用线条粗细、对比度、网点密度、分格规律性、速度线强度、背景细节、色板和 tone keywords 等参数来定义风格语言。
+### 5. 35 项自动化测试
 
-### 🛠️ 浏览器编辑器与非破坏式重生成
-- 首页可载入 `project_final.json`
-- 支持 episode 切换、页码切换、网格视图与键盘左右翻页
-- 点击 panel 打开侧栏，查看场景、角色、对白、提示词和修订历史
-- 支持单格 rerender，且请求会携带 `style_pack`、`character_bible` 与锁定约束
-- “尽量保持角色 / 风格 / 构图 / 对白” 仅作为提示词级约束，不承诺像素级硬锁定
-- 每次 rerender 前会将旧的 `RenderOutput` 推入 `revision_history`
+```
+tests/
+├── unit/
+│   ├── test_prompt_director.py     # 13 项 — 确定性逻辑 100% 覆盖
+│   ├── test_writer_agent.py        # 4 项 — Critic 循环控制流
+│   ├── test_storyboarder_agent.py  # 7 项 — 视觉节奏校验
+│   ├── test_orchestrator.py        # 4 项 — 状态机 + EventBus
+│   └── test_middleware.py          # 5 项 — TokenTracker
+├── integration/
+│   └── test_pipeline_e2e.py        # 2 项 — 全流水线 mock 集成
+└── conftest.py                     # MockLLMAdapter + MockImageAdapter
+```
 
-### 🖼️ 本地图片直连预览
-- CLI 生成的图片会写入 `generation_params.local_image_path`
-- 前端会优先使用 `render_output.image_url`
-- 如果 `image_url` 为空，但存在本地路径，则自动通过 `/api/project-image` 读取 `output/` 子树里的图片
-- `GET /api/project-image` 会拒绝绝对路径、`..` 穿越和非图片后缀
+### 6. 前端 Pipeline 控制台
 
-### 🔌 多后端适配器（BYOK）
-**LLM：**
-- Gemini
-- OpenAI
+`/pipeline` 页面——在浏览器中直接驱动整个 Agent 流水线：
 
-**Image：**
-- `adapters/gemini_image.py`
-- `adapters/openai_image.py`
-- `adapters/seedream_image.py`
-
-这些适配器文件负责把统一的 `StylePack + prompt + aspect_ratio + reference images` 输入，翻译成各家图片模型能理解的请求，再把结果统一包装回 `GeneratedImageResult`，让上层流水线与前端无需关心具体供应商差异。
+- 输入故事前提 + 页数，一键启动
+- 7 步 Agent 链路可视化进度条
+- SSE 实时事件流滚动显示
+- 成本仪表盘：LLM 调用次数、Token 总量、预估费用、总耗时
 
 ---
 
-## 🏗️ 架构与数据流
+## 架构与数据流
 
 ```text
-Idea
-  ↓
-CharacterBible + StylePack
-  ↓
-WriterAgent
-  ↓
-EpisodeOutline + Dialogue Draft
-  ↓
-StoryboarderAgent
-  ↓
-PageSpec / PanelSpec
-  ↓
-PromptDirectorAgent
-  ↓
-ImageAdapter (Gemini / OpenAI / Seedream)
-  ↓
-output/project_final.json + output/images/*
-  ↓
-Next.js Editor
-  ├─ GET /api/project-image      读取 output/ 下的本地图片
-  └─ POST /api/rerender-panel    调用 python -m cli.rerender_panel
+                         ┌──────────────────────────────────────────┐
+                         │           PipelineOrchestrator           │
+                         │     (State Machine + EventBus + CP)      │
+                         └──┬────────┬────────┬────────┬───────┬───┘
+                            │        │        │        │       │
+                         ┌──▼──┐  ┌──▼──┐  ┌──▼──┐ ┌──▼──┐ ┌──▼──┐
+                         │Write│  │Story│  │Prompt│ │Image│ │QualR│
+                         │Agent│  │board│  │Direc│ │Adapt│ │eview│
+                         └──┬──┘  └──┬──┘  └──┬──┘ └──┬──┘ └──┬──┘
+                            │        │        │        │       │
+                    ┌───────▼────────▼────────▼────────▼───────▼───┐
+                    │              BaseLLMAdapter                   │
+                    │        (TrackedLLMAdapter wrapper)            │
+                    │    Gemini  │  OpenAI  │  Mock (testing)       │
+                    └──────────────────────────────────────────────┘
+                                        │
+                    ┌───────────────────▼───────────────────────────┐
+                    │                FastAPI Server                  │
+                    │   SSE /pipeline/run  │  /panel/rerender       │
+                    └───────────────────┬───────────────────────────┘
+                                        │
+                    ┌───────────────────▼───────────────────────────┐
+                    │          Next.js 14 Frontend                  │
+                    │   Pipeline Console  │  Comic Viewer/Editor    │
+                    └──────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📁 项目结构
+## 项目结构
 
 ```text
 MangaZine/
+├── orchestrator/               # 编排引擎（v0.3 新增）
+│   ├── pipeline.py             #   状态机 + PipelineOrchestrator
+│   ├── events.py               #   EventBus + PipelineEvent
+│   ├── messages.py             #   AgentMessage 通信协议
+│   ├── checkpoint.py           #   断点保存/恢复
+│   └── tracing.py              #   OpenTelemetry 集成
 ├── agents/
-│   ├── prompt_director_agent.py
-│   ├── storyboarder_agent.py
-│   └── writer_agent.py
+│   ├── writer_agent.py         #   WriterAgent（Critic 自审循环）
+│   ├── storyboarder_agent.py   #   StoryboarderAgent（节奏校验）
+│   ├── prompt_director_agent.py#   PromptDirectorAgent（确定性）
+│   └── quality_reviewer_agent.py#  QualityReviewerAgent（v0.3 新增）
 ├── adapters/
-│   ├── base.py
-│   ├── factory.py
-│   ├── gemini_image.py
-│   ├── gemini_llm.py
-│   ├── openai_image.py
-│   ├── openai_llm.py
+│   ├── base.py                 #   BaseLLMAdapter / BaseImageAdapter
+│   ├── factory.py              #   适配器工厂
+│   ├── middleware.py           #   TokenTracker（v0.3 新增）
+│   ├── gemini_llm.py / gemini_image.py
+│   ├── openai_llm.py / openai_image.py
 │   └── seedream_image.py
-├── app/
-│   ├── api/
-│   │   ├── project-image/route.ts
-│   │   └── rerender-panel/route.ts
-│   ├── layout.tsx
-│   └── page.tsx
-├── cli/
-│   ├── image_paths.py
-│   ├── rerender_panel.py
-│   └── run_pipeline.py
-├── components/
-│   ├── ComicCanvas.tsx
-│   ├── MultiPageViewer.tsx
-│   └── PanelEditorSidebar.tsx
-├── lib/
-│   ├── layoutConfigs.ts
-│   ├── projectImageServer.ts
-│   └── projectImageUrl.ts
-├── models/
-│   ├── layouts.py
-│   └── schemas.py
-├── store/
-│   └── comicStore.ts
-├── types/
-│   └── comic.ts
-├── config.py
-├── next.config.js
-└── package.json
+├── server/                     # FastAPI 后端（v0.3 新增）
+│   ├── main.py                 #   /api/v1/* 端点
+│   └── schemas.py              #   API 请求/响应模型
+├── tests/                      # 自动化测试（v0.3 新增）
+│   ├── unit/                   #   5 个测试模块
+│   ├── integration/            #   E2E mock 测试
+│   └── conftest.py             #   共享 fixtures
+├── app/                        # Next.js 14 前端
+│   ├── page.tsx                #   首页 + 项目查看器
+│   └── pipeline/page.tsx       #   Pipeline 控制台（v0.3 新增）
+├── cli/run_pipeline.py         # CLI 入口（v0.3 重写）
+├── .github/workflows/ci.yml   # GitHub Actions CI
+├── Dockerfile                  # 多阶段构建
+├── docker-compose.yml          # 一键部署
+└── CHANGELOG.md                # 更新日志
 ```
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 1. 安装依赖
 
@@ -174,115 +205,83 @@ npm install
 ### 2. 配置环境变量
 
 ```bash
-copy .env.example .env
+cp .env.example .env
 ```
 
-在 `.env` 中配置：
-
 ```env
-LLM_PROVIDER=gemini
-IMAGE_PROVIDER=gemini
+LLM_PROVIDER=gemini          # 或 openai
+IMAGE_PROVIDER=gemini         # 或 openai / seedream
 GOOGLE_API_KEY=your-key
-OPENAI_API_KEY=
-SEEDREAM_API_KEY=
 ```
 
-可选项：
-
-```env
-# 前端 route 调用 Python 时默认使用 `python`
-# 如果你的环境需要指定解释器，可覆盖它
-PYTHON_EXECUTABLE=python
-```
-
-### 3. 运行 CLI 生成项目
+### 3. CLI 生成
 
 ```bash
-# 默认生成单页项目
+# 单页
 python cli/run_pipeline.py "赛博朋克大厨用激光锅铲对决美食评论家"
 
-# 生成 15 页的第 1 话
+# 15 页完整话
 python cli/run_pipeline.py "发福的退休杀手开了一家便利店" --pages 15
 
-# 基于已有项目继续生成下一话
-python cli/run_pipeline.py "第2话：神秘顾客登场" --continue-from output/20250322_090000_发福的退休杀手/project_final.json --pages 18
+# 续写第 2 话
+python cli/run_pipeline.py "第2话：神秘顾客登场" \
+  --continue-from output/.../project_final.json --pages 18
 ```
 
-### 4. 启动前端编辑器
+### 4. 启动 FastAPI 后端（可选）
+
+```bash
+uvicorn server.main:app --reload --port 8000
+```
+
+### 5. 启动前端
 
 ```bash
 npm run dev
 ```
 
-浏览器打开 `http://localhost:3000` 后：
+打开 `http://localhost:3000`，载入项目或前往 `/pipeline` 启动在线生成。
 
-1. 载入 `output/.../project_final.json`
-2. 在首页切换不同 episode 和 page
-3. 点击 panel 打开侧栏
-4. 修改临时提示词或锁定选项
-5. 点击“重新生成当前分镜”
-
----
-
-## 📦 输出结构
-
-```text
-output/20260326_153000_示例项目/
-├── project_final.json
-├── images/
-│   ├── page_01/
-│   │   ├── panel_0.png
-│   │   ├── panel_1.png
-│   │   └── ...
-│   └── page_02/
-├── rerenders/
-│   └── <page_id>/
-│       └── <panel_id>/
-│           └── 20260326T153522.png
-└── checkpoints/
-    ├── 01_character_bible.json
-    ├── 02_episode_outline.json
-    └── 03_page_specs.json
-```
-
-`project_final.json` 是整个项目的恢复点；`images/` 是流水线初次生成结果；`rerenders/` 保存前端局部重生成产生的新版本。
-
----
-
-## ✅ 质量检查
+### 6. Docker 一键部署
 
 ```bash
-npm run type-check
-npm run lint
-npm run build
-python -m compileall adapters agents cli models config.py
+docker-compose up --build
+```
+
+### 7. 运行测试
+
+```bash
+python -m pytest tests/ -v
 ```
 
 ---
 
-## 🛠️ 技术栈
+## 技术栈
 
 | 层级 | 技术 |
 |---|---|
-| 后端 | Python 3.11+、Pydantic v2、本地 Python route bridge |
-| 前端 | Next.js 14（App Router）、React、Tailwind CSS |
-| 状态管理 | Zustand + Immer |
+| 编排引擎 | 有限状态机 + EventBus + Checkpoint |
+| Agent 层 | WriterAgent / StoryboarderAgent / PromptDirectorAgent / QualityReviewerAgent |
+| 后端 | Python 3.11+, FastAPI, Pydantic v2, SSE |
+| 前端 | Next.js 14 (App Router), React 18, Tailwind CSS, Zustand |
+| 可观测性 | TokenTracker, AgentMessage Protocol, OpenTelemetry |
 | 图像接入 | Gemini / OpenAI / Seedream 适配器层 |
-| 项目模型 | `CharacterBible` / `StylePack` / `PageSpec` / `RenderOutput` |
+| 测试 | Pytest + MockLLMAdapter + MockImageAdapter (35 tests) |
+| CI/CD | GitHub Actions + Docker Compose |
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] v0.1：核心 CLI 流水线 + 基础前端编辑器
 - [x] v0.2：多页生成 + 多话连续性 + 16 种布局模板
-- [x] 本地图片直连预览 + 单格 rerender route
-- [ ] StylePack 可视化编辑器
-- [ ] 嵌字 / PDF / 条漫导出
-- [ ] 更完整的审阅工作流
+- [x] **v0.3：Agent 编排引擎 + 可观测性 + FastAPI + QualityReviewer + 测试 + CI/CD + Pipeline 控制台**
+- [ ] v0.4：StylePack 可视化编辑器
+- [ ] v0.5：嵌字 / PDF / 条漫导出
+- [ ] v0.6：多 Agent 并行调度 + DAG 编排
 
 ---
 
-## 📄 开源协议
+## 开源协议
 
 本项目基于 [MIT License](./LICENSE) 开源。

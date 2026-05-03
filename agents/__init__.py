@@ -1,6 +1,7 @@
 """MangaZine agent layer — re-exports for convenient top-level imports."""
 
 from agents.prompt_director_agent import PromptDirectorAgent, PromptPlan
+from agents.quality_reviewer_agent import QualityReport, QualityReviewerAgent
 from agents.storyboarder_agent import (
     MAX_WIDE_SHOTS_PER_PAGE,
     ShotRhythmIssue,
@@ -34,4 +35,7 @@ __all__ = [
     # PromptDirectorAgent
     "PromptDirectorAgent",
     "PromptPlan",
+    # QualityReviewerAgent
+    "QualityReviewerAgent",
+    "QualityReport",
 ]

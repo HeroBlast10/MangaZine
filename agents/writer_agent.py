@@ -19,7 +19,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from adapters.llm_adapter import LLMAdapter, LLMAdapterError
+from adapters.base import BaseLLMAdapter, LLMAdapterError
 from models.schemas import CharacterBible, EpisodeOutline, StylePack
 
 logger = logging.getLogger(__name__)
@@ -306,7 +306,7 @@ class WriterAgent:
         output = await agent.run("A cyberpunk chef fights food critics with a laser spatula")
     """
 
-    def __init__(self, llm: LLMAdapter) -> None:
+    def __init__(self, llm: BaseLLMAdapter) -> None:
         self._llm = llm
 
     # ------------------------------------------------------------------

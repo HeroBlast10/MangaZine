@@ -5,3 +5,12 @@ rich>=13.7.0
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 python-dotenv>=1.0.0
+
+# Observability (optional — tracing degrades to no-op if not installed)
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+# opentelemetry-exporter-otlp-proto-grpc>=1.20.0  # uncomment for Jaeger/OTLP export
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=1.0.0

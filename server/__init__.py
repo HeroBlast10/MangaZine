@@ -1,0 +1,1 @@
+"""MangaZine API server package."""

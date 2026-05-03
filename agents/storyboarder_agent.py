@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from adapters.llm_adapter import LLMAdapter
+from adapters.base import BaseLLMAdapter
 from agents.writer_agent import DialogueDraft, WriterAgentOutput
 from models.schemas import (
     CameraAngle,
@@ -267,7 +267,7 @@ class StoryboarderAgent:
         output = await agent.run(writer_output, page_number=1, panel_count=4)
     """
 
-    def __init__(self, llm: LLMAdapter) -> None:
+    def __init__(self, llm: BaseLLMAdapter) -> None:
         self._llm = llm
 
     # ------------------------------------------------------------------
