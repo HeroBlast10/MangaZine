@@ -14,10 +14,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,18 +37,14 @@ from models.schemas import (
     CharacterBible,
     ComicProject,
     PanelSpec,
-    RenderOutput,
-    RenderStatus,
     StylePack,
 )
 from orchestrator.events import EventBus, PipelineEvent
 from orchestrator.pipeline import PipelineOrchestrator, PipelineRequest
 from server.schemas import (
     PipelineRunRequest,
-    PipelineStatusResponse,
     RerenderPanelRequest,
     RerenderPanelResponse,
-    TokenUsageSummary,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -64,17 +60,19 @@ app = FastAPI(
     description="Multi-agent manga production pipeline API.",
 )
 
+_CORS_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# In-memory run registry (production would use a DB)
-_active_runs: dict[UUID, PipelineOrchestrator] = {}
-_run_trackers: dict[UUID, TokenTracker] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +228,7 @@ async def rerender_panel(req: RerenderPanelRequest):
 @app.get("/api/v1/projects")
 async def list_projects():
     """List all project_final.json files in the output directory."""
-    output_dir = Config.OUTPUT_DIR
+    output_dir = Config.OUTPUT_DIR.resolve()
     if not output_dir.exists():
         return []
 
@@ -238,14 +236,16 @@ async def list_projects():
     for pf in sorted(output_dir.rglob("project_final.json"), reverse=True):
         try:
             proj = ComicProject.model_validate_json(pf.read_text(encoding="utf-8"))
+            relative_path = str(pf.parent.relative_to(output_dir))
             projects.append({
                 "project_id": str(proj.project_id),
                 "title": proj.title,
                 "status": proj.status.value,
                 "episode_count": len(proj.episodes),
-                "path": str(pf),
+                "path": relative_path,
             })
         except Exception:
+            logger.debug("Skipping unreadable project file: %s", pf, exc_info=True)
             continue
 
     return projects
@@ -254,7 +254,11 @@ async def list_projects():
 @app.get("/api/v1/project/{project_path:path}")
 async def get_project(project_path: str):
     """Load a project_final.json by path."""
-    p = Config.OUTPUT_DIR / project_path / "project_final.json"
+    output_dir = Config.OUTPUT_DIR.resolve()
+    p = (output_dir / project_path / "project_final.json").resolve()
+    if not str(p).startswith(str(output_dir)):
+        raise HTTPException(status_code=403, detail="Access denied")
     if not p.exists():
         raise HTTPException(status_code=404, detail="Project not found")
-    return json.loads(p.read_text(encoding="utf-8"))
+    proj = ComicProject.model_validate_json(p.read_text(encoding="utf-8"))
+    return proj.model_dump(mode="json")

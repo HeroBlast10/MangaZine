@@ -1,5 +1,3 @@
-import { spawn } from 'node:child_process';
-
 import { NextRequest, NextResponse } from 'next/server';
 
 import type { RerenderRequest, RerenderResponse } from '@/types/comic';
@@ -7,57 +5,7 @@ import type { RerenderRequest, RerenderResponse } from '@/types/comic';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function runPythonRerender(input: RerenderRequest): Promise<RerenderResponse> {
-  const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python';
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      pythonExecutable,
-      ['-m', 'cli.rerender_panel'],
-      {
-        cwd: process.cwd(),
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: process.env,
-      },
-    );
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
-
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr.trim() || stdout.trim() || `Python exited with code ${code}`));
-        return;
-      }
-
-      try {
-        const response = JSON.parse(stdout) as RerenderResponse;
-        resolve(response);
-      } catch (error) {
-        reject(
-          new Error(
-            `Invalid rerender response: ${(error as Error).message}\n${stdout.trim()}`,
-          ),
-        );
-      }
-    });
-
-    child.stdin.write(JSON.stringify(input));
-    child.stdin.end();
-  });
-}
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 function isValidRerenderRequest(body: Partial<RerenderRequest>): body is RerenderRequest {
   return Boolean(
@@ -84,13 +32,27 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await runPythonRerender(body);
+    const resp = await fetch(`${API_BASE}/api/v1/panel/rerender`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const detail = await resp.text();
+      return NextResponse.json(
+        { error: detail || `Backend error: ${resp.status}` },
+        { status: resp.status },
+      );
+    }
+
+    const result = (await resp.json()) as RerenderResponse;
     return NextResponse.json(result);
   } catch (error) {
-    console.error('[rerender-panel] rerender failed', error);
+    console.error('[rerender-panel] proxy to FastAPI failed', error);
     return NextResponse.json(
       { error: (error as Error).message || 'Rerender failed.' },
-      { status: 500 },
+      { status: 502 },
     );
   }
 }

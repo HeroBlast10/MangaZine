@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from adapters.base import BaseLLMAdapter, BaseImageAdapter, LLMAdapterError, ImageAdapterError
 from agents.prompt_director_agent import PromptDirectorAgent, PromptPlan
+from agents.quality_reviewer_agent import QualityReviewerAgent
 from agents.storyboarder_agent import StoryboarderAgent, StoryboarderOutput
 from agents.writer_agent import WriterAgent, WriterAgentOutput
 from models.schemas import (
@@ -179,6 +180,7 @@ class PipelineOrchestrator:
         self._writer = WriterAgent(llm=llm)
         self._storyboarder = StoryboarderAgent(llm=llm)
         self._prompt_director = PromptDirectorAgent()
+        self._quality_reviewer = QualityReviewerAgent(llm=llm)
 
         self._state = PipelineState.INIT
         self._ctx: PipelineContext | None = None
@@ -210,9 +212,20 @@ class PipelineOrchestrator:
             "episode_number": self._ctx.episode_number,
         })
 
+        ctx = self._ctx
+
         try:
             for state in self._STATE_ORDER[1:-1]:  # skip INIT and COMPLETED
                 self._state = state
+
+                if self._try_restore_checkpoint(state, ctx):
+                    await self._emit(
+                        EventType.STEP_SKIPPED,
+                        step_name=state.value,
+                        payload={"reason": "restored from checkpoint"},
+                    )
+                    continue
+
                 t0 = time.monotonic()
                 await self._emit(EventType.STEP_STARTED, step_name=state.value)
 
@@ -230,10 +243,11 @@ class PipelineOrchestrator:
             return self._ctx.project  # type: ignore[return-value]
 
         except Exception as exc:
+            failed_at = self._state.value
             self._state = PipelineState.FAILED
             await self._emit(EventType.PIPELINE_FAILED, step_name="pipeline", payload={
                 "error": str(exc),
-                "failed_state": self._state.value,
+                "failed_state": failed_at,
             })
             raise
 
@@ -477,6 +491,27 @@ class PipelineOrchestrator:
                         "total": total,
                     })
 
+                    try:
+                        report, final_bytes = await self._quality_reviewer.review_and_retry(
+                            panel=panel,
+                            image_bytes=image_result.image_bytes,
+                            character_bible=ctx.character_bible,
+                            style_pack=ctx.style_pack,
+                            image_adapter=self._image_adapter,
+                        )
+                        if final_bytes is not image_result.image_bytes:
+                            image_path.write_bytes(final_bytes)
+
+                        await self._emit(EventType.QUALITY_REVIEW, step_name="quality", payload={
+                            "page": page.page_number,
+                            "panel": panel.panel_index,
+                            "score": report.overall_score,
+                            "passed": report.passed,
+                            "issues": report.issues[:3],
+                        })
+                    except Exception as qr_exc:
+                        logger.warning("Quality review skipped for panel %s: %s", panel.panel_id, qr_exc)
+
                 except ImageAdapterError as exc:
                     panel.render_output.status = RenderStatus.REJECTED
                     panel.render_output.reviewer_notes = str(exc)
@@ -520,6 +555,44 @@ class PipelineOrchestrator:
     # Helpers
     # ------------------------------------------------------------------
 
+    _CHECKPOINT_MAP: dict[PipelineState, tuple[str, str]] = {
+        PipelineState.STYLE_PACK: ("01_style_pack", "style_pack"),
+        PipelineState.CHARACTER_BIBLE: ("02_character_bible", "character_bible"),
+        PipelineState.EPISODE_OUTLINE: ("03_episode_outline", "episode_outline"),
+    }
+
+    def _try_restore_checkpoint(self, state: PipelineState, ctx: PipelineContext) -> bool:
+        """Try to restore a pipeline step from checkpoint. Returns True if skipped."""
+        mapping = self._CHECKPOINT_MAP.get(state)
+        if mapping is None or self._checkpoint is None:
+            return False
+
+        cp_name, ctx_attr = mapping
+        if not self._checkpoint.has_checkpoint(cp_name):
+            return False
+        if getattr(ctx, ctx_attr, None) is not None:
+            return False
+
+        data = self._checkpoint.load(cp_name)
+        if data is None:
+            return False
+
+        schema_map: dict[str, type] = {
+            "style_pack": StylePack,
+            "character_bible": CharacterBible,
+            "episode_outline": EpisodeOutline,
+        }
+        model_cls = schema_map.get(ctx_attr)
+        if model_cls and isinstance(data, dict):
+            try:
+                setattr(ctx, ctx_attr, model_cls.model_validate(data))
+                logger.info("Restored checkpoint: %s", cp_name)
+                return True
+            except Exception:
+                logger.warning("Checkpoint %s invalid, re-running step", cp_name)
+                return False
+        return False
+
     def _load_previous_project(self, path_str: str) -> None:
         p = Path(path_str)
         if not p.exists():
@@ -528,7 +601,13 @@ class PipelineOrchestrator:
         try:
             prev = ComicProject.model_validate_json(p.read_text(encoding="utf-8"))
             self._ctx.previous_project = prev
-            self._ctx.episode_number = len(prev.episodes) + 1
+            auto_episode = len(prev.episodes) + 1
+            if self._ctx.episode_number <= 1:
+                self._ctx.episode_number = auto_episode
+            logger.info(
+                "Loaded previous project (%d episodes), episode_number=%d",
+                len(prev.episodes), self._ctx.episode_number,
+            )
         except Exception:
             logger.warning("Failed to load previous project from %s", p, exc_info=True)
 

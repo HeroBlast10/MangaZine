@@ -8,7 +8,6 @@ WebSocket) subscribe to the bus and receive events in real time.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from enum import Enum
@@ -80,7 +79,6 @@ class EventBus:
 
     def __init__(self) -> None:
         self._handlers: list[EventHandler] = []
-        self._queue: asyncio.Queue[PipelineEvent] = asyncio.Queue()
 
     def subscribe(self, handler: EventHandler) -> None:
         self._handlers.append(handler)
@@ -97,15 +95,8 @@ class EventBus:
         self._handlers.append(_filtered)
 
     async def emit(self, event: PipelineEvent) -> None:
-        await self._queue.put(event)
         for handler in self._handlers:
             try:
                 await handler(event)
             except Exception:
                 logger.exception("Event handler failed for %s", event.event_type)
-
-    async def stream(self):
-        """Async generator that yields events as they arrive."""
-        while True:
-            event = await self._queue.get()
-            yield event

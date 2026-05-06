@@ -33,6 +33,9 @@ COPY store/ store/
 COPY types/ types/
 COPY next.config.js tsconfig.json tailwind.config.js postcss.config.js ./
 
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 RUN npm run build
 
 # -------------------------------------------------------------------
@@ -43,8 +46,10 @@ WORKDIR /app
 
 COPY --from=frontend-build /app/.next/standalone ./
 COPY --from=frontend-build /app/.next/static ./.next/static
-COPY --from=frontend-build /app/public ./public
 
 EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]

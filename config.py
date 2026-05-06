@@ -41,14 +41,24 @@ class Config:
     """
     
     # LLM Configuration
-    LLM_PROVIDER: LLMProvider = LLMProvider(
-        os.getenv("LLM_PROVIDER", "gemini")
-    )
-    
+    try:
+        LLM_PROVIDER: LLMProvider = LLMProvider(os.getenv("LLM_PROVIDER", "gemini"))
+    except ValueError:
+        _bad = os.getenv("LLM_PROVIDER")
+        _valid = ", ".join(v.value for v in LLMProvider)
+        raise SystemExit(
+            f"Invalid LLM_PROVIDER='{_bad}'. Choose from: {_valid}"
+        )
+
     # Image Configuration
-    IMAGE_PROVIDER: ImageProvider = ImageProvider(
-        os.getenv("IMAGE_PROVIDER", "gemini")
-    )
+    try:
+        IMAGE_PROVIDER: ImageProvider = ImageProvider(os.getenv("IMAGE_PROVIDER", "gemini"))
+    except ValueError:
+        _bad = os.getenv("IMAGE_PROVIDER")
+        _valid = ", ".join(v.value for v in ImageProvider)
+        raise SystemExit(
+            f"Invalid IMAGE_PROVIDER='{_bad}'. Choose from: {_valid}"
+        )
     
     # API Keys
     GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY")
