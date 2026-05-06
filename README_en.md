@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Production-Grade Multi-Agent Manga Creation System</strong><br/>
-  Comics are engineering systems, not single prompts.
+  Comics take more than a single prompt.
 </p>
 
 <p align="center">
@@ -26,9 +26,9 @@
 
 ## What Problem Does This Solve?
 
-Every AI image tool today is a **single-image slot machine** — type a prompt, get one picture. But manga is not a collection of standalone images. It is an intricate engineering chain of **characters × style × narrative × storyboarding × composition × iteration**.
+Every AI image tool today is a **single-image slot machine** — type a prompt, get one picture. Manga needs a lot more: **characters × style × narrative × storyboarding × composition × iteration**, a full engineering chain.
 
-MangaZine decomposes this chain into **4 specialised agents + 1 orchestration engine**, making every step inspectable, recoverable, and iterable:
+MangaZine breaks this chain into **4 specialised agents + 1 orchestration engine**, so every step is inspectable, recoverable, and iterable:
 
 ```
 Premise → WriterAgent (characters / outline / dialogue / self-critique)
@@ -37,23 +37,20 @@ Premise → WriterAgent (characters / outline / dialogue / self-critique)
         → ImageAdapter (multi-model rendering)
         → QualityReviewerAgent (Vision LLM quality gate + auto-retry)
 ```
-
-> When an interviewer asks "how do your agents collaborate?", you can walk through the code line by line — because the architecture diagram in the README **matches the implementation exactly**.
-
 ---
 
 ## Key Highlights
 
 ### 1. State-Machine-Driven Agent Orchestrator
 
-Not a 500-line `async` function. A real **finite state machine + event-driven** orchestration engine:
+A **finite state machine + event-driven** orchestration engine — replaces the 500-line `async` function:
 
 ```python
 PipelineState: INIT → STYLE_PACK → CHARACTER_BIBLE → EPISODE_OUTLINE
              → STORYBOARD → PROMPT_SYNTHESIS → IMAGE_GENERATION → ASSEMBLY → COMPLETED
 ```
 
-- Each state transition calls the corresponding Agent's `.run()` method
+- Each state transition calls the matching Agent's `.run()` method
 - `EventBus` async pub-sub — the frontend consumes events in real time via SSE
 - `CheckpointManager` saves after every step — supports resume from any checkpoint
 - Agents are injected via `BaseLLMAdapter` interface — swap mock / Gemini / OpenAI in one line
@@ -84,7 +81,7 @@ Trace: pipeline_run_abc123
 
 ### 4. FastAPI Backend + SSE Streaming
 
-Replaces the `child_process.spawn` workaround with a proper Python API server:
+Swaps out the `child_process.spawn` workaround for a standalone Python API server:
 
 | Endpoint | Purpose |
 |---|---|

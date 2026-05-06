@@ -34,6 +34,9 @@ node_modules/
 output/
 output_*/
 
+# Private docs (interview prep, personal notes)
+docs/
+
 # Jupyter
 .ipynb_checkpoints/
 
