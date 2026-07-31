@@ -26,11 +26,6 @@ export function MultiPageViewer({
   const totalPages = pages.length;
 
   useEffect(() => {
-    setCurrentPage(0);
-    setViewMode('single');
-  }, [episode.episode_id]);
-
-  useEffect(() => {
     if (!pages[currentPage]) {
       return;
     }

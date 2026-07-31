@@ -104,7 +104,15 @@ function PanelCell({
     <div
       style={style}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
       role="button"
+      tabIndex={0}
+      aria-label={`编辑分镜 ${panel.panel_index + 1}`}
       className={[
         'group relative cursor-pointer overflow-hidden transition-all duration-150',
         'outline outline-1',
@@ -174,8 +182,8 @@ export function ComicCanvas({ page, className = '' }: ComicCanvasProps) {
         gridTemplateColumns: layoutConfig.gridTemplateColumns,
         gridTemplateRows: layoutConfig.gridTemplateRows,
         gridTemplateAreas: layoutConfig.gridTemplateAreas,
-        gap: `${layout.gutter_px || 8}px`,
-        padding: layout.bleed ? 0 : `${layout.gutter_px || 8}px`,
+        gap: `${layout.gutter_px ?? 8}px`,
+        padding: layout.bleed ? 0 : `${layout.gutter_px ?? 8}px`,
       }
     : {
         display: 'grid',

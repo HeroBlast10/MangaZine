@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/MangaZine-v0.3.0-7C3AED?style=for-the-badge" alt="MangaZine" />
+  <img src="https://img.shields.io/badge/MangaZine-v0.3.1-7C3AED?style=for-the-badge" alt="MangaZine" />
 </p>
 
 <h1 align="center">MangaZine</h1>
@@ -16,10 +16,10 @@
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT" /></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python" /></a>
-  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-14-black" alt="Next.js" /></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js" /></a>
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-0.111+-009688" alt="FastAPI" /></a>
   <a href="https://docs.pydantic.dev/"><img src="https://img.shields.io/badge/Pydantic-v2-e92063" alt="Pydantic" /></a>
-  <img src="https://img.shields.io/badge/tests-35%20passed-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-42%20passed-brightgreen" alt="Tests" />
 </p>
 
 ---
@@ -89,7 +89,7 @@ Trace: pipeline_run_abc123
 | `GET /api/v1/projects` | 项目列表 |
 | `GET /api/v1/project/{path}` | 项目详情 |
 
-### 5. 35 项自动化测试
+### 5. 42 项自动化测试
 
 ```
 tests/
@@ -140,7 +140,7 @@ tests/
                     └───────────────────┬───────────────────────────┘
                                         │
                     ┌───────────────────▼───────────────────────────┐
-                    │          Next.js 14 Frontend                  │
+                    │          Next.js 16 Frontend                  │
                     │   Pipeline Console  │  Comic Viewer/Editor    │
                     └──────────────────────────────────────────────┘
 ```
@@ -176,7 +176,7 @@ MangaZine/
 │   ├── unit/                   #   5 个测试模块
 │   ├── integration/            #   E2E mock 测试
 │   └── conftest.py             #   共享 fixtures
-├── app/                        # Next.js 14 前端
+├── app/                        # Next.js 16 前端
 │   ├── page.tsx                #   首页 + 项目查看器
 │   └── pipeline/page.tsx       #   Pipeline 控制台（v0.3 新增）
 ├── cli/run_pipeline.py         # CLI 入口（v0.3 重写）
@@ -209,8 +209,11 @@ cp .env.example .env
 ```env
 LLM_PROVIDER=gemini          # 或 openai
 IMAGE_PROVIDER=gemini         # 或 openai / seedream
+MANGAZINE_API_KEY=replace-with-a-long-random-secret
 GOOGLE_API_KEY=your-key
 ```
+
+`MANGAZINE_API_KEY` 用于 Next.js 服务端代理与 FastAPI 之间的认证；请使用随机长密钥，不要放入 `NEXT_PUBLIC_*` 变量或提交到 Git。
 
 ### 3. CLI 生成
 
@@ -261,10 +264,10 @@ python -m pytest tests/ -v
 | 编排引擎 | 有限状态机 + EventBus + Checkpoint |
 | Agent 层 | WriterAgent / StoryboarderAgent / PromptDirectorAgent / QualityReviewerAgent |
 | 后端 | Python 3.11+, FastAPI, Pydantic v2, SSE |
-| 前端 | Next.js 14 (App Router), React 18, Tailwind CSS, Zustand |
+| 前端 | Next.js 16 (App Router), React 19, Tailwind CSS, Zustand |
 | 可观测性 | TokenTracker, AgentMessage Protocol, OpenTelemetry |
 | 图像接入 | Gemini / OpenAI / Seedream 适配器层 |
-| 测试 | Pytest + MockLLMAdapter + MockImageAdapter (35 tests) |
+| 测试 | Pytest + MockLLMAdapter + MockImageAdapter (42 tests + frontend tests) |
 | CI/CD | GitHub Actions + Docker Compose |
 
 ---

@@ -33,9 +33,6 @@ COPY store/ store/
 COPY types/ types/
 COPY next.config.js tsconfig.json tailwind.config.js postcss.config.js ./
 
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
 RUN npm run build
 
 # -------------------------------------------------------------------
@@ -51,5 +48,6 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV API_INTERNAL_URL="http://backend:8000"
 
 CMD ["node", "server.js"]

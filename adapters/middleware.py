@@ -8,7 +8,11 @@ token usage, latency, and estimated cost for every LLM call.
 from __future__ import annotations
 
 import logging
+import math
+import re
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Type, TypeVar
@@ -110,8 +114,11 @@ class TokenTracker:
 
 
 def _estimate_tokens(text: str) -> int:
-    """Rough word-count-based token estimate (1 token ≈ 0.75 words for English)."""
-    return max(1, int(len(text.split()) / 0.75))
+    """Estimate mixed CJK/Latin token counts without collapsing CJK text to one token."""
+    cjk_chars = len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", text))
+    non_cjk = re.sub(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", " ", text)
+    latin_chars = len(re.sub(r"\s+", "", non_cjk))
+    return max(1, cjk_chars + math.ceil(latin_chars / 4))
 
 
 def _estimate_cost(
@@ -149,6 +156,29 @@ class TrackedLLMAdapter(BaseLLMAdapter):
         self._provider = provider
         self.agent_name = agent_name
         self.step_name = step_name
+        self._agent_context: ContextVar[str] = ContextVar(
+            f"mangazine_agent_{id(self)}",
+            default=agent_name,
+        )
+        self._step_context: ContextVar[str] = ContextVar(
+            f"mangazine_step_{id(self)}",
+            default=step_name,
+        )
+
+    @contextmanager
+    def tracking_context(self, agent_name: str, step_name: str):
+        """Temporarily attribute nested calls to an agent/pipeline step."""
+        agent_token = self._agent_context.set(agent_name)
+        step_token = self._step_context.set(step_name)
+        try:
+            yield
+        finally:
+            self._agent_context.reset(agent_token)
+            self._step_context.reset(step_token)
+
+    def _record_identity(self) -> tuple[str, str, str]:
+        model = getattr(self._inner, "_model", self._provider)
+        return self._agent_context.get(), self._step_context.get(), str(model)
 
     async def generate_structured_response(
         self,
@@ -157,6 +187,8 @@ class TrackedLLMAdapter(BaseLLMAdapter):
         system_instruction: str | None = None,
         temperature: float = 0.7,
         max_output_tokens: int = 8192,
+        image_bytes: bytes | None = None,
+        image_mime_type: str = "image/png",
     ) -> T:
         call_id = self._tracker.next_call_id()
         input_tokens = _estimate_tokens(prompt + (system_instruction or ""))
@@ -169,6 +201,8 @@ class TrackedLLMAdapter(BaseLLMAdapter):
                 system_instruction=system_instruction,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
+                image_bytes=image_bytes,
+                image_mime_type=image_mime_type,
             )
             elapsed = (time.monotonic() - t0) * 1000
 
@@ -179,11 +213,12 @@ class TrackedLLMAdapter(BaseLLMAdapter):
             output_tokens = _estimate_tokens(output_text)
             cost = _estimate_cost(input_tokens, output_tokens, self._provider)
 
+            agent_name, step_name, model = self._record_identity()
             self._tracker.record(LLMCallRecord(
                 call_id=call_id,
-                agent_name=self.agent_name,
-                step_name=self.step_name,
-                model=self._provider,
+                agent_name=agent_name,
+                step_name=step_name,
+                model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 latency_ms=round(elapsed, 1),
@@ -191,18 +226,19 @@ class TrackedLLMAdapter(BaseLLMAdapter):
             ))
             logger.debug(
                 "LLM call #%d (%s/%s): %d in + %d out tokens, %.0f ms, $%.4f",
-                call_id, self.agent_name, self.step_name,
+                call_id, agent_name, step_name,
                 input_tokens, output_tokens, elapsed, cost,
             )
             return result
 
         except Exception as exc:
             elapsed = (time.monotonic() - t0) * 1000
+            agent_name, step_name, model = self._record_identity()
             self._tracker.record(LLMCallRecord(
                 call_id=call_id,
-                agent_name=self.agent_name,
-                step_name=self.step_name,
-                model=self._provider,
+                agent_name=agent_name,
+                step_name=step_name,
+                model=model,
                 input_tokens=input_tokens,
                 output_tokens=0,
                 latency_ms=round(elapsed, 1),
@@ -234,11 +270,12 @@ class TrackedLLMAdapter(BaseLLMAdapter):
             output_tokens = _estimate_tokens(result)
             cost = _estimate_cost(input_tokens, output_tokens, self._provider)
 
+            agent_name, step_name, model = self._record_identity()
             self._tracker.record(LLMCallRecord(
                 call_id=call_id,
-                agent_name=self.agent_name,
-                step_name=self.step_name,
-                model=self._provider,
+                agent_name=agent_name,
+                step_name=step_name,
+                model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 latency_ms=round(elapsed, 1),
@@ -248,11 +285,12 @@ class TrackedLLMAdapter(BaseLLMAdapter):
 
         except Exception as exc:
             elapsed = (time.monotonic() - t0) * 1000
+            agent_name, step_name, model = self._record_identity()
             self._tracker.record(LLMCallRecord(
                 call_id=call_id,
-                agent_name=self.agent_name,
-                step_name=self.step_name,
-                model=self._provider,
+                agent_name=agent_name,
+                step_name=step_name,
+                model=model,
                 input_tokens=input_tokens,
                 output_tokens=0,
                 latency_ms=round(elapsed, 1),

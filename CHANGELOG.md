@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.1 — Security, Reliability, and Performance Hardening (2026-07-31)
+
+- Protected cost-incurring and project-data API endpoints with a server-side API key, strict UUID/path validation, and output-root confinement.
+- Moved browser requests behind same-origin Next.js proxies so backend credentials never enter the client bundle.
+- Fixed Vision quality review to send the generated image and fail closed when review is unavailable.
+- Added bounded concurrent image rendering, atomic output/checkpoint writes, partial render recovery, SSE cancellation, and unique output names.
+- Enforced requested episode/page metadata and storyboard contracts, including character IDs, layout type, panel count, and reading order.
+- Applied rerender lock constraints and negative prompts consistently across all image providers.
+- Upgraded to Next.js 16.2.12 and React 19.2.8; production npm audit now reports zero vulnerabilities.
+- Expanded CI and regression coverage to 42 Python tests plus frontend unit tests, lint, type-check, build, and dependency checks.
+- Hardened Docker networking, startup health checks, secret isolation, and build context handling.
+
 ## v0.3.0 — Production-Grade Multi-Agent Orchestration (2026-05-03)
 
 MangaZine 从原型级 CLI 工具跃升为**真正可运维的多 Agent 协作系统**。本次升级覆盖 6 大模块、20+ 新文件、35 项自动化测试，彻底解决了 Agent 模块与主路径脱节、缺乏编排层和可观测性等核心断层。

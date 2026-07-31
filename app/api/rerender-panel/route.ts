@@ -5,7 +5,10 @@ import type { RerenderRequest, RerenderResponse } from '@/types/comic';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE =
+  process.env.API_INTERNAL_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://localhost:8000';
 
 function isValidRerenderRequest(body: Partial<RerenderRequest>): body is RerenderRequest {
   return Boolean(
@@ -34,8 +37,15 @@ export async function POST(request: NextRequest) {
   try {
     const resp = await fetch(`${API_BASE}/api/v1/panel/rerender`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.MANGAZINE_API_KEY
+          ? { 'X-API-Key': process.env.MANGAZINE_API_KEY }
+          : {}),
+      },
       body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: request.signal,
     });
 
     if (!resp.ok) {

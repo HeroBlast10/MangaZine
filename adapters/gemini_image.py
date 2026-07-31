@@ -58,9 +58,15 @@ class GeminiImageAdapter(BaseImageAdapter):
         reference_images: list[str] | None = None,
         draft_mode: bool = True,
         aspect_ratio: str = "1:1",
+        negative_prompt: str | None = None,
     ) -> GeneratedImageResult:
         model = self._draft_model if draft_mode else self._final_model
-        full_prompt = self._build_prompt(prompt, style_pack, aspect_ratio)
+        full_prompt = self._build_prompt(
+            prompt,
+            style_pack,
+            aspect_ratio,
+            negative_prompt=negative_prompt,
+        )
         contents = [types.Part.from_text(text=full_prompt)]
 
         loaded_references: list[str] = []
@@ -92,6 +98,7 @@ class GeminiImageAdapter(BaseImageAdapter):
                         "aspect_ratio": aspect_ratio,
                         "draft_mode": draft_mode,
                         "reference_images_used": loaded_references,
+                        "negative_prompt": negative_prompt,
                     },
                 )
 
@@ -132,7 +139,13 @@ class GeminiImageAdapter(BaseImageAdapter):
         ]
         return await asyncio.gather(*tasks)
 
-    def _build_prompt(self, panel_desc: str, style_pack: StylePack, aspect_ratio: str) -> str:
+    def _build_prompt(
+        self,
+        panel_desc: str,
+        style_pack: StylePack,
+        aspect_ratio: str,
+        negative_prompt: str | None = None,
+    ) -> str:
         style_lines = [
             f"- Line weight: {style_pack.line_weight:.2f}",
             f"- Contrast: {style_pack.contrast:.2f}",
@@ -152,16 +165,17 @@ class GeminiImageAdapter(BaseImageAdapter):
                 + ", ".join(str(url) for url in style_pack.reference_image_urls[:4])
             )
 
-        return "\n".join(
-            [
-                "Generate a polished manga panel illustration.",
-                f"Target framing: approximately {aspect_ratio}.",
-                f"Panel description: {panel_desc.strip()}",
-                "Style requirements:",
-                *style_lines,
-                "Preserve clear silhouettes, expressive ink work, and readable storytelling.",
-            ]
-        )
+        sections = [
+            "Generate a polished manga panel illustration.",
+            f"Target framing: approximately {aspect_ratio}.",
+            f"Panel description: {panel_desc.strip()}",
+            "Style requirements:",
+            *style_lines,
+            "Preserve clear silhouettes, expressive ink work, and readable storytelling.",
+        ]
+        if negative_prompt:
+            sections.append(f"Strictly avoid: {negative_prompt.strip()}")
+        return "\n".join(sections)
 
     def _load_image_part(self, path_or_url: str):
         if path_or_url.startswith(("http://", "https://")):

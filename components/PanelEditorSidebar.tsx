@@ -10,7 +10,7 @@ import {
   Unlock,
   X,
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 import { resolveRenderImageUrl } from '@/lib/projectImageUrl';
 import {
@@ -162,13 +162,8 @@ export function PanelEditorSidebar({
     lock_composition: false,
     lock_dialogue: false,
   });
-  const [promptOverride, setPromptOverride] = useState('');
+  const [promptOverride, setPromptOverride] = useState(panel?.prompt_plan ?? '');
   const [rerenderError, setRerenderError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPromptOverride(panel?.prompt_plan ?? '');
-    setRerenderError(null);
-  }, [panel?.panel_id, panel?.prompt_plan]);
 
   const previewUrl = panel ? resolveRenderImageUrl(panel.render_output) : null;
   const hasImage = Boolean(

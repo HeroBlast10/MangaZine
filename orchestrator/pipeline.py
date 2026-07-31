@@ -12,6 +12,7 @@ and emits structured events via the EventBus.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import random
 import time
@@ -32,6 +33,7 @@ from models.schemas import (
     ComicProject,
     EpisodeOutline,
     LayoutTemplate,
+    LayoutType,
     PageSpec,
     ProjectStatus,
     RenderOutput,
@@ -40,8 +42,31 @@ from models.schemas import (
 )
 from orchestrator.checkpoint import CheckpointManager
 from orchestrator.events import EventBus, EventType, PipelineEvent
+from orchestrator.tracing import trace_step
+from config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def _atomic_write_bytes(path: Path, payload: bytes) -> None:
+    """Write a file atomically so interrupted runs do not leave partial artefacts."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(payload)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _atomic_write_text(path: Path, payload: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(payload, encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +210,7 @@ class PipelineOrchestrator:
         self._state = PipelineState.INIT
         self._ctx: PipelineContext | None = None
         self._checkpoint: CheckpointManager | None = None
+        self._image_concurrency = max(1, Config.MAX_IMAGE_CONCURRENCY)
 
     # ------------------------------------------------------------------
     # Public API
@@ -229,7 +255,26 @@ class PipelineOrchestrator:
                 t0 = time.monotonic()
                 await self._emit(EventType.STEP_STARTED, step_name=state.value)
 
-                await self._execute_step(state, images_dir)
+                agent_name = {
+                    PipelineState.CHARACTER_BIBLE: "WriterAgent",
+                    PipelineState.EPISODE_OUTLINE: "WriterAgent",
+                    PipelineState.STORYBOARD: "StoryboarderAgent",
+                    PipelineState.PROMPT_SYNTHESIS: "PromptDirectorAgent",
+                    PipelineState.IMAGE_GENERATION: "ImageGeneration",
+                    PipelineState.ASSEMBLY: "PipelineOrchestrator",
+                }.get(state, "PipelineOrchestrator")
+                tracking_context = (
+                    self._llm.tracking_context(agent_name, state.value)
+                    if hasattr(self._llm, "tracking_context")
+                    else contextlib.nullcontext()
+                )
+                async with trace_step(
+                    agent_name,
+                    state.value,
+                    attributes={"pipeline.run_id": str(ctx.run_id)},
+                ):
+                    with tracking_context:
+                        await self._execute_step(state, images_dir)
 
                 elapsed = (time.monotonic() - t0) * 1000
                 await self._emit(
@@ -245,6 +290,9 @@ class PipelineOrchestrator:
         except Exception as exc:
             failed_at = self._state.value
             self._state = PipelineState.FAILED
+            await self._emit(EventType.STEP_FAILED, step_name=failed_at, payload={
+                "error": str(exc),
+            })
             await self._emit(EventType.PIPELINE_FAILED, step_name="pipeline", payload={
                 "error": str(exc),
                 "failed_state": failed_at,
@@ -255,26 +303,27 @@ class PipelineOrchestrator:
         self, request: PipelineRequest,
     ) -> AsyncIterator[PipelineEvent]:
         """Run the pipeline and yield events as an async stream (for SSE)."""
-        collected: list[PipelineEvent] = []
+        collected: asyncio.Queue[PipelineEvent] = asyncio.Queue(maxsize=256)
 
         async def _collector(event: PipelineEvent) -> None:
-            collected.append(event)
+            await collected.put(event)
 
         self._event_bus.subscribe(_collector)
 
         task = asyncio.create_task(self.run(request))
 
-        while not task.done():
-            while collected:
-                yield collected.pop(0)
-            await asyncio.sleep(0.05)
-
-        # drain remaining
-        while collected:
-            yield collected.pop(0)
-
-        # propagate exceptions
-        task.result()
+        try:
+            while not task.done() or not collected.empty():
+                try:
+                    yield await asyncio.wait_for(collected.get(), timeout=0.5)
+                except TimeoutError:
+                    continue
+            await task
+        finally:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     # ------------------------------------------------------------------
     # Step dispatcher
@@ -323,12 +372,22 @@ class PipelineOrchestrator:
             self._checkpoint.save("02_character_bible", ctx.character_bible)
             return
 
-        writer_output = await self._writer.run(ctx.premise, style_pack=ctx.style_pack)
-        ctx.writer_output = writer_output
-        ctx.character_bible = writer_output.character_bible
-        ctx.episode_outline = writer_output.episode_outline
+        writer_output = await self._writer.run(
+            ctx.premise,
+            style_pack=ctx.style_pack,
+            target_pages=ctx.target_pages,
+            episode_number=ctx.episode_number,
+        )
+        # Detach from provider/mock-owned instances before normalizing request
+        # metadata and storing mutable pipeline state.
+        ctx.writer_output = writer_output.model_copy(deep=True)
+        ctx.writer_output.episode_outline.episode_number = ctx.episode_number
+        ctx.writer_output.episode_outline.target_page_count = ctx.target_pages
+        ctx.character_bible = ctx.writer_output.character_bible
+        ctx.episode_outline = ctx.writer_output.episode_outline
 
         self._checkpoint.save("02_character_bible", ctx.character_bible)
+        self._checkpoint.save("02_writer_output", ctx.writer_output)
 
         await self._emit(EventType.CRITIC_REVIEW, step_name="writer_critic", payload={
             "critic_rounds": writer_output.critic_rounds_taken,
@@ -394,11 +453,20 @@ class PipelineOrchestrator:
             else:
                 layout_template, panel_count = random.choice(_LAYOUT_OPTIONS)
 
+            layout_type = (
+                LayoutType.UNIFORM_GRID
+                if layout_template in {
+                    LayoutTemplate.PANELS_4_GRID,
+                    LayoutTemplate.PANELS_6_GRID,
+                    LayoutTemplate.PANELS_3_VERTICAL,
+                }
+                else LayoutType.ASYMMETRIC
+            )
             sb_output: StoryboarderOutput = await self._storyboarder.run(
                 writer_output=writer_out,
                 page_number=page_num,
                 panel_count=panel_count,
-                layout_type=layout_template.value,
+                layout_type=layout_type.value,
             )
             ctx.storyboard_outputs.append(sb_output)
             page = sb_output.page
@@ -438,37 +506,78 @@ class PipelineOrchestrator:
     async def _step_image_generation(self, ctx: PipelineContext, images_dir: Path) -> None:
         assert ctx.style_pack is not None
         assert ctx.character_bible is not None
+        assert self._checkpoint is not None
 
         from cli.image_paths import build_internal_image_url, to_project_relative_path
 
-        rendered = 0
+        progress = self._checkpoint.load("06_render_progress")
+        if isinstance(progress, list):
+            try:
+                restored_pages = [PageSpec.model_validate(item) for item in progress]
+                restored_outputs = {
+                    panel.panel_id: panel.render_output
+                    for page in restored_pages
+                    for panel in page.panels
+                }
+                for page in ctx.pages:
+                    for panel in page.panels:
+                        restored = restored_outputs.get(panel.panel_id)
+                        if restored is not None:
+                            panel.render_output = restored
+            except Exception:
+                logger.warning("Render progress checkpoint is invalid; regenerating", exc_info=True)
+
         total = sum(len(p.panels) for p in ctx.pages)
+        rendered = sum(
+            1
+            for page in ctx.pages
+            for panel in page.panels
+            if panel.render_output.status in {
+                RenderStatus.DRAFT_READY,
+                RenderStatus.APPROVED,
+            }
+        )
+        counter_lock = asyncio.Lock()
+        semaphore = asyncio.Semaphore(self._image_concurrency)
 
-        for page in ctx.pages:
+        async def render_panel(page: PageSpec, panel) -> None:
+            nonlocal rendered
             page_dir = images_dir / f"page_{page.page_number:02d}"
-            page_dir.mkdir(parents=True, exist_ok=True)
+            image_path = page_dir / f"panel_{panel.panel_index}.png"
 
-            for panel in page.panels:
-                char_visuals: list[str] = []
-                for cid in panel.characters:
-                    char = ctx.character_bible.get_by_id(cid)
-                    if char:
-                        char_visuals.append(f"{char.name}: {char.visual_description}")
+            if (
+                image_path.exists()
+                and panel.render_output.status
+                in {RenderStatus.DRAFT_READY, RenderStatus.APPROVED}
+            ):
+                return
 
-                enriched_prompt = panel.prompt_plan
-                if char_visuals:
-                    enriched_prompt += "  Characters in frame \u2014 " + "; ".join(char_visuals)
+            char_visuals: list[str] = []
+            reference_images: list[str] = [
+                str(url) for url in ctx.style_pack.reference_image_urls
+            ]
+            for cid in panel.characters:
+                char = ctx.character_bible.get_by_id(cid)
+                if char:
+                    char_visuals.append(f"{char.name}: {char.visual_description}")
+                    reference_images.extend(str(url) for url in char.reference_image_urls)
+            reference_images = list(dict.fromkeys(reference_images))
 
-                image_path = page_dir / f"panel_{panel.panel_index}.png"
+            enriched_prompt = panel.prompt_plan
+            if char_visuals:
+                enriched_prompt += "  Characters in frame — " + "; ".join(char_visuals)
 
+            async with semaphore:
                 try:
                     image_result = await self._image_adapter.generate_panel_image(
                         prompt=enriched_prompt,
                         style_pack=ctx.style_pack,
+                        reference_images=reference_images or None,
                         draft_mode=True,
                         aspect_ratio="2:3",
+                        negative_prompt=panel.render_refs.negative_prompt or None,
                     )
-                    image_path.write_bytes(image_result.image_bytes)
+                    _atomic_write_bytes(image_path, image_result.image_bytes)
                     internal_url = build_internal_image_url(image_path)
 
                     panel.render_output = RenderOutput(
@@ -481,13 +590,15 @@ class PipelineOrchestrator:
                         },
                         generated_at=image_result.generated_at,
                     )
-                    rendered += 1
+                    async with counter_lock:
+                        rendered += 1
+                        rendered_snapshot = rendered
 
                     await self._emit(EventType.IMAGE_GENERATED, step_name="render", payload={
                         "page": page.page_number,
                         "panel": panel.panel_index,
                         "size_kb": len(image_result.image_bytes) // 1024,
-                        "rendered": rendered,
+                        "rendered": rendered_snapshot,
                         "total": total,
                     })
 
@@ -499,8 +610,15 @@ class PipelineOrchestrator:
                             style_pack=ctx.style_pack,
                             image_adapter=self._image_adapter,
                         )
-                        if final_bytes is not image_result.image_bytes:
-                            image_path.write_bytes(final_bytes)
+                        if final_bytes != image_result.image_bytes:
+                            _atomic_write_bytes(image_path, final_bytes)
+
+                        panel.render_output.status = (
+                            RenderStatus.APPROVED if report.passed else RenderStatus.REJECTED
+                        )
+                        panel.render_output.reviewer_notes = "; ".join(report.issues) or None
+                        panel.render_output.generation_params["quality_score"] = report.overall_score
+                        panel.render_output.generation_params["quality_passed"] = report.passed
 
                         await self._emit(EventType.QUALITY_REVIEW, step_name="quality", payload={
                             "page": page.page_number,
@@ -510,7 +628,15 @@ class PipelineOrchestrator:
                             "issues": report.issues[:3],
                         })
                     except Exception as qr_exc:
-                        logger.warning("Quality review skipped for panel %s: %s", panel.panel_id, qr_exc)
+                        panel.render_output.status = RenderStatus.REJECTED
+                        panel.render_output.reviewer_notes = (
+                            f"Quality review failed: {qr_exc}"
+                        )
+                        logger.warning(
+                            "Quality review failed for panel %s: %s",
+                            panel.panel_id,
+                            qr_exc,
+                        )
 
                 except ImageAdapterError as exc:
                     panel.render_output.status = RenderStatus.REJECTED
@@ -522,25 +648,32 @@ class PipelineOrchestrator:
                         "error": str(exc),
                     })
 
+        for page in ctx.pages:
+            await asyncio.gather(*(render_panel(page, panel) for panel in page.panels))
+            self._checkpoint.save("06_render_progress", ctx.pages)
+
+        self._checkpoint.save("06_rendered_pages", ctx.pages)
+
     async def _step_assembly(self, ctx: PipelineContext, output_dir: Path) -> None:
         assert ctx.episode_outline is not None
         assert ctx.style_pack is not None
         assert ctx.character_bible is not None
 
-        from datetime import datetime as dt
+        from datetime import datetime as dt, timezone
 
         ctx.episode_outline.pages = ctx.pages
 
         if ctx.previous_project:
-            project = ctx.previous_project
+            project = ctx.previous_project.model_copy(deep=True)
             project.episodes.append(ctx.episode_outline)
-            project.updated_at = dt.utcnow()
+            project.updated_at = dt.now(timezone.utc)
+            project.status = ProjectStatus.REVIEW
         else:
             project = ComicProject(
                 title=ctx.episode_outline.title,
                 subtitle=ctx.premise[:120],
                 genre=["action"],
-                status=ProjectStatus.IN_PRODUCTION,
+                status=ProjectStatus.REVIEW,
                 style_pack=ctx.style_pack,
                 character_bible=ctx.character_bible,
                 episodes=[ctx.episode_outline],
@@ -549,7 +682,8 @@ class PipelineOrchestrator:
 
         ctx.project = project
         final_path = output_dir / "project_final.json"
-        final_path.write_text(project.model_dump_json(indent=2), encoding="utf-8")
+        _atomic_write_text(final_path, project.model_dump_json(indent=2))
+        self._checkpoint.save("07_project", project)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -563,10 +697,83 @@ class PipelineOrchestrator:
 
     def _try_restore_checkpoint(self, state: PipelineState, ctx: PipelineContext) -> bool:
         """Try to restore a pipeline step from checkpoint. Returns True if skipped."""
-        mapping = self._CHECKPOINT_MAP.get(state)
-        if mapping is None or self._checkpoint is None:
+        if self._checkpoint is None:
             return False
 
+        if state == PipelineState.CHARACTER_BIBLE:
+            writer_data = self._checkpoint.load("02_writer_output")
+            if isinstance(writer_data, dict):
+                try:
+                    writer_output = WriterAgentOutput.model_validate(writer_data)
+                    ctx.writer_output = writer_output
+                    ctx.character_bible = writer_output.character_bible
+                    ctx.episode_outline = writer_output.episode_outline
+                    logger.info("Restored checkpoint: 02_writer_output")
+                    return True
+                except Exception:
+                    logger.warning(
+                        "Checkpoint 02_writer_output invalid, falling back",
+                        exc_info=True,
+                    )
+
+        if state == PipelineState.STORYBOARD:
+            data = self._checkpoint.load("04_page_specs")
+            if isinstance(data, list):
+                try:
+                    ctx.pages = [PageSpec.model_validate(item) for item in data]
+                    logger.info("Restored checkpoint: 04_page_specs")
+                    return True
+                except Exception:
+                    logger.warning("Checkpoint 04_page_specs invalid", exc_info=True)
+            return False
+
+        if state == PipelineState.PROMPT_SYNTHESIS:
+            data = self._checkpoint.load("05_prompt_plans")
+            if isinstance(data, list) and ctx.pages:
+                try:
+                    plans = [PromptPlan.model_validate(item) for item in data]
+                    by_panel_id = {plan.panel_id: plan for plan in plans}
+                    for page in ctx.pages:
+                        for panel in page.panels:
+                            plan = by_panel_id.get(str(panel.panel_id))
+                            if plan is None:
+                                raise ValueError(
+                                    f"Missing prompt checkpoint for panel {panel.panel_id}"
+                                )
+                            panel.prompt_plan = plan.final_prompt
+                            panel.render_refs.negative_prompt = plan.negative_prompt
+                    ctx.prompt_plans = plans
+                    logger.info("Restored checkpoint: 05_prompt_plans")
+                    return True
+                except Exception:
+                    logger.warning("Checkpoint 05_prompt_plans invalid", exc_info=True)
+            return False
+
+        if state == PipelineState.IMAGE_GENERATION:
+            data = self._checkpoint.load("06_rendered_pages")
+            if isinstance(data, list):
+                try:
+                    ctx.pages = [PageSpec.model_validate(item) for item in data]
+                    logger.info("Restored checkpoint: 06_rendered_pages")
+                    return True
+                except Exception:
+                    logger.warning("Checkpoint 06_rendered_pages invalid", exc_info=True)
+            return False
+
+        if state == PipelineState.ASSEMBLY:
+            data = self._checkpoint.load("07_project")
+            if isinstance(data, dict):
+                try:
+                    ctx.project = ComicProject.model_validate(data)
+                    logger.info("Restored checkpoint: 07_project")
+                    return True
+                except Exception:
+                    logger.warning("Checkpoint 07_project invalid", exc_info=True)
+            return False
+
+        mapping = self._CHECKPOINT_MAP.get(state)
+        if mapping is None:
+            return False
         cp_name, ctx_attr = mapping
         if not self._checkpoint.has_checkpoint(cp_name):
             return False

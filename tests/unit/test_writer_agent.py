@@ -105,10 +105,16 @@ class TestWriterAgentRevision:
     @pytest.mark.asyncio
     async def test_revision_on_low_score(self, needs_revision_llm):
         agent = WriterAgent(llm=needs_revision_llm)
-        output = await agent.run("A hero fights evil")
+        output = await agent.run(
+            "A hero fights evil",
+            target_pages=7,
+            episode_number=3,
+        )
 
         assert output.critic_rounds_taken == 1
         assert output.final_critic_score >= 7
+        assert output.episode_outline.episode_number == 3
+        assert output.episode_outline.target_page_count == 7
 
     @pytest.mark.asyncio
     async def test_exhausts_retries(self, sample_character_bible, sample_episode_outline):

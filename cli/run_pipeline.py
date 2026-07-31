@@ -20,6 +20,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 # ---------------------------------------------------------------------------
 # Ensure project root is importable regardless of invocation style
@@ -39,6 +40,7 @@ from adapters import create_llm_adapter, create_image_adapter, LLMAdapterError, 
 from config import Config
 from orchestrator.events import EventBus, EventType, PipelineEvent
 from orchestrator.pipeline import PipelineOrchestrator, PipelineRequest, PipelineState
+from orchestrator.tracing import init_tracer
 
 console = Console()
 logging.basicConfig(level=logging.WARNING)
@@ -169,6 +171,10 @@ async def run(
     episode_number: int = 1,
 ) -> None:
     """Execute the multi-page MangaZine production pipeline via orchestrator."""
+    init_tracer(
+        service_name="mangazine-cli",
+        export_to_console=False,
+    )
 
     # ── Adapters ──
     console.print(f"\n[bold]● Initialising adapters…[/bold] [dim]({Config.LLM_PROVIDER.value} + {Config.IMAGE_PROVIDER.value})[/dim]")
@@ -271,7 +277,7 @@ def main() -> None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_premise = "".join(c if c.isalnum() or c in " _-" else "_" for c in args.premise[:30])
         safe_premise = safe_premise.strip().replace(" ", "_")
-        folder_name = f"{timestamp}_{safe_premise}"
+        folder_name = f"{timestamp}_{safe_premise or 'untitled'}_{uuid4().hex[:8]}"
         args.output_dir = Config.OUTPUT_DIR / folder_name
     elif args.output_dir is None:
         args.output_dir = Config.OUTPUT_DIR

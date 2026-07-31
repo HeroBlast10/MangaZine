@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BookOpen,
   Layers,
@@ -27,31 +27,14 @@ export default function Home() {
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
 
   const episodes = project?.episodes ?? [];
-  const selectedEpisode = episodes[selectedEpisodeIndex] ?? episodes[0];
-  const currentPage = useMemo(
-    () => selectedEpisode?.pages[currentPageIndex] ?? selectedEpisode?.pages[0] ?? null,
-    [currentPageIndex, selectedEpisode],
-  );
-
-  useEffect(() => {
-    setSelectedEpisodeIndex(0);
-    setCurrentPageIndex(0);
-  }, [project?.project_id]);
-
-  useEffect(() => {
-    if (!selectedEpisode) {
-      setCurrentPageIndex(0);
-      return;
-    }
-
-    if (!selectedEpisode.pages[currentPageIndex]) {
-      setCurrentPageIndex(0);
-    }
-  }, [currentPageIndex, selectedEpisode]);
+  const safeEpisodeIndex = episodes[selectedEpisodeIndex] ? selectedEpisodeIndex : 0;
+  const selectedEpisode = episodes[safeEpisodeIndex];
+  const safePageIndex = selectedEpisode?.pages[currentPageIndex] ? currentPageIndex : 0;
+  const currentPage = selectedEpisode?.pages[safePageIndex] ?? null;
 
   useEffect(() => {
     clearSelectedPanel();
-  }, [clearSelectedPanel, currentPageIndex, selectedEpisodeIndex]);
+  }, [clearSelectedPanel, safeEpisodeIndex, safePageIndex]);
 
   const handleFileUpload = (file: File) => {
     const reader = new FileReader();
@@ -59,6 +42,8 @@ export default function Home() {
       try {
         const json = event.target?.result as string;
         loadProject(json);
+        setSelectedEpisodeIndex(0);
+        setCurrentPageIndex(0);
       } catch (error) {
         alert('项目 JSON 无法解析，请确认文件格式正确。');
         console.error(error);
@@ -123,7 +108,7 @@ export default function Home() {
               Pipeline 控制台
             </Link>
             <span className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-500">
-              v0.3.0
+              v0.3.1
             </span>
           </div>
         </div>
@@ -266,7 +251,7 @@ export default function Home() {
                   <label className="flex items-center gap-2 text-sm text-zinc-400">
                     <span>章节</span>
                     <select
-                      value={selectedEpisodeIndex}
+                      value={safeEpisodeIndex}
                       onChange={(event) => handleEpisodeChange(Number(event.target.value))}
                       className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200 outline-none transition-colors focus:border-violet-500"
                     >
@@ -306,6 +291,7 @@ export default function Home() {
 
       {selectedPanelId && project && (
         <PanelEditorSidebar
+          key={selectedPanelId}
           characterBible={project.character_bible}
           stylePack={project.style_pack}
         />

@@ -47,8 +47,14 @@ class OpenAIImageAdapter(BaseImageAdapter):
         reference_images: list[str] | None = None,
         draft_mode: bool = True,
         aspect_ratio: str = "1:1",
+        negative_prompt: str | None = None,
     ) -> GeneratedImageResult:
-        full_prompt = self._build_prompt(prompt, style_pack, aspect_ratio)
+        full_prompt = self._build_prompt(
+            prompt,
+            style_pack,
+            aspect_ratio,
+            negative_prompt=negative_prompt,
+        )
         size = self._map_aspect_ratio(aspect_ratio)
         quality = "standard" if draft_mode else "hd"
 
@@ -83,6 +89,7 @@ class OpenAIImageAdapter(BaseImageAdapter):
                         "size": size,
                         "quality": quality,
                         "reference_images_supplied": len(reference_images or []),
+                        "negative_prompt": negative_prompt,
                     },
                 )
 
@@ -123,7 +130,13 @@ class OpenAIImageAdapter(BaseImageAdapter):
         ]
         return await asyncio.gather(*tasks)
 
-    def _build_prompt(self, panel_desc: str, style_pack: StylePack, aspect_ratio: str) -> str:
+    def _build_prompt(
+        self,
+        panel_desc: str,
+        style_pack: StylePack,
+        aspect_ratio: str,
+        negative_prompt: str | None = None,
+    ) -> str:
         style_bits: list[str] = [
             f"line weight {style_pack.line_weight:.2f}",
             f"contrast {style_pack.contrast:.2f}",
@@ -142,12 +155,15 @@ class OpenAIImageAdapter(BaseImageAdapter):
                 f"style references {', '.join(str(url) for url in style_pack.reference_image_urls[:4])}"
             )
 
-        return (
+        full_prompt = (
             f"{panel_desc.strip()}\n\n"
             f"Keep a tall manga panel composition with an approximate {aspect_ratio} aspect ratio. "
             f"Style cues: {', '.join(style_bits)}. "
             "Professional manga illustration, crisp inks, readable storytelling."
-        )[:2000]
+        )
+        if negative_prompt:
+            full_prompt += f" Strictly avoid: {negative_prompt.strip()}."
+        return full_prompt[:2000]
 
     @staticmethod
     def _map_aspect_ratio(aspect_ratio: str) -> str:

@@ -15,6 +15,17 @@ _PROJECT_ROOT = Path(__file__).parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
 
+def _read_int(name: str, default: int, *, minimum: int = 1, maximum: int = 100) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise SystemExit(f"{name} must be an integer, got {raw!r}") from exc
+    if not minimum <= value <= maximum:
+        raise SystemExit(f"{name} must be between {minimum} and {maximum}, got {value}")
+    return value
+
+
 class LLMProvider(str, Enum):
     """Supported LLM providers for text generation."""
     GEMINI = "gemini"
@@ -64,6 +75,7 @@ class Config:
     GOOGLE_API_KEY: str | None = os.getenv("GOOGLE_API_KEY")
     OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
     SEEDREAM_API_KEY: str | None = os.getenv("SEEDREAM_API_KEY")
+    API_KEY: str | None = os.getenv("MANGAZINE_API_KEY")
     
     # Model names
     GEMINI_TEXT_MODEL: str = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-pro-preview")
@@ -79,6 +91,24 @@ class Config:
     # Generation parameters
     DEFAULT_TEMPERATURE: float = float(os.getenv("DEFAULT_TEMPERATURE", "0.7"))
     DEFAULT_MAX_TOKENS: int = int(os.getenv("DEFAULT_MAX_TOKENS", "8192"))
+    MAX_IMAGE_CONCURRENCY: int = _read_int(
+        "MAX_IMAGE_CONCURRENCY",
+        3,
+        minimum=1,
+        maximum=16,
+    )
+    MAX_PIPELINE_CONCURRENCY: int = _read_int(
+        "MAX_PIPELINE_CONCURRENCY",
+        2,
+        minimum=1,
+        maximum=16,
+    )
+    MAX_GENERATION_REQUESTS_PER_MINUTE: int = _read_int(
+        "MAX_GENERATION_REQUESTS_PER_MINUTE",
+        10,
+        minimum=1,
+        maximum=1000,
+    )
     
     # Output configuration
     OUTPUT_DIR: Path = _PROJECT_ROOT / "output"

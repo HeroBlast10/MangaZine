@@ -16,10 +16,8 @@ Pipeline position:
 
 from __future__ import annotations
 
-import base64
 import logging
-from enum import Enum
-from typing import Literal
+from contextlib import nullcontext
 
 from pydantic import BaseModel, Field
 
@@ -58,6 +56,10 @@ class QualityReport(BaseModel):
     passed: bool = Field(
         ...,
         description=f"True when overall_score >= {_QUALITY_THRESHOLD}.",
+    )
+    review_succeeded: bool = Field(
+        True,
+        description="False when the vision service could not complete the review.",
     )
     dimension_scores: list[DimensionScore] = Field(
         default_factory=list,
@@ -191,13 +193,21 @@ class QualityReviewerAgent:
             threshold=_QUALITY_THRESHOLD,
         )
 
+        context = (
+            self._llm.tracking_context("QualityReviewerAgent", "vision_review")
+            if hasattr(self._llm, "tracking_context")
+            else nullcontext()
+        )
         try:
-            report: QualityReport = await self._llm.generate_structured_response(
-                prompt=prompt,
-                response_schema=QualityReport,
-                system_instruction=_SYSTEM_QUALITY_REVIEWER,
-                temperature=0.30,
-            )
+            with context:
+                report: QualityReport = await self._llm.generate_structured_response(
+                    prompt=prompt,
+                    response_schema=QualityReport,
+                    system_instruction=_SYSTEM_QUALITY_REVIEWER,
+                    temperature=0.30,
+                    image_bytes=image_bytes,
+                    image_mime_type="image/png",
+                )
             report.panel_id = str(panel.panel_id)
             report.passed = report.overall_score >= _QUALITY_THRESHOLD
 
@@ -212,15 +222,17 @@ class QualityReviewerAgent:
 
         except Exception as exc:
             logger.warning(
-                "[QualityReviewer] Review failed for panel %s: %s — defaulting to pass",
+                "[QualityReviewer] Review failed for panel %s: %s — marking unreviewed",
                 panel.panel_id,
                 exc,
             )
             return QualityReport(
                 panel_id=str(panel.panel_id),
-                overall_score=_QUALITY_THRESHOLD,
-                passed=True,
+                overall_score=1,
+                passed=False,
+                review_succeeded=False,
                 issues=[f"Quality review failed: {exc}"],
+                prompt_refinement="Retry quality review after the vision service recovers.",
             )
 
     async def review_and_retry(
@@ -242,7 +254,7 @@ class QualityReviewerAgent:
         report = await self.review(panel, current_bytes, character_bible, style_pack)
 
         for attempt in range(max_retries):
-            if report.passed:
+            if report.passed or not report.review_succeeded:
                 break
 
             logger.info(
@@ -260,6 +272,7 @@ class QualityReviewerAgent:
                     style_pack=style_pack,
                     draft_mode=True,
                     aspect_ratio="2:3",
+                    negative_prompt=panel.render_refs.negative_prompt or None,
                 )
                 current_bytes = result.image_bytes
                 report = await self.review(panel, current_bytes, character_bible, style_pack)

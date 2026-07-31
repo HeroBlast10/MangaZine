@@ -43,6 +43,8 @@ class BaseLLMAdapter(ABC):
         system_instruction: str | None = None,
         temperature: float = 0.7,
         max_output_tokens: int = 8192,
+        image_bytes: bytes | None = None,
+        image_mime_type: str = "image/png",
     ) -> T:
         """
         Generate a structured response constrained by a Pydantic schema.
@@ -59,6 +61,10 @@ class BaseLLMAdapter(ABC):
             Sampling temperature (0 = deterministic, 1 = creative).
         max_output_tokens : int
             Maximum tokens in the response.
+        image_bytes : bytes | None
+            Optional image content for multimodal/vision requests.
+        image_mime_type : str
+            MIME type for ``image_bytes``.
         
         Returns
         -------
@@ -123,6 +129,7 @@ class BaseImageAdapter(ABC):
         reference_images: list[str] | None = None,
         draft_mode: bool = True,
         aspect_ratio: str = "1:1",
+        negative_prompt: str | None = None,
     ) -> GeneratedImageResult:
         """
         Generate a manga panel image from a text prompt.
@@ -139,6 +146,8 @@ class BaseImageAdapter(ABC):
             If True, use faster/cheaper model. If False, use high-quality model.
         aspect_ratio : str
             Image aspect ratio (e.g., "1:1", "16:9", "3:4").
+        negative_prompt : str | None
+            Terms or constraints that should be excluded from the image.
         
         Returns
         -------

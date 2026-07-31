@@ -23,12 +23,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from adapters.base import BaseLLMAdapter
+from adapters.base import BaseLLMAdapter, LLMAdapterError
 from agents.writer_agent import DialogueDraft, WriterAgentOutput
 from models.schemas import (
     CameraAngle,
     CharacterBible,
     EpisodeOutline,
+    LayoutType,
     PageSpec,
     ShotType,
 )
@@ -243,6 +244,50 @@ def _angle_list() -> str:
     return ", ".join(a.value for a in CameraAngle)
 
 
+def _normalize_page_contract(
+    page: PageSpec,
+    *,
+    requested_page_number: int,
+    requested_panel_count: int,
+    requested_layout_type: LayoutType,
+    character_bible: CharacterBible,
+) -> PageSpec:
+    """Validate LLM output and normalize safe, deterministic indexing fields."""
+    if len(page.panels) != requested_panel_count:
+        raise LLMAdapterError(
+            "Storyboard contract violation: expected "
+            f"{requested_panel_count} panels, received {len(page.panels)}"
+        )
+
+    valid_character_ids = {character.character_id for character in character_bible.characters}
+    for panel in page.panels:
+        unknown_panel_ids = set(panel.characters) - valid_character_ids
+        unknown_speaker_ids = {
+            line.character_id
+            for line in panel.dialogue
+            if line.character_id is not None and line.character_id not in valid_character_ids
+        }
+        unknown_ids = unknown_panel_ids | unknown_speaker_ids
+        if unknown_ids:
+            raise LLMAdapterError(
+                "Storyboard contract violation: unknown character IDs "
+                + ", ".join(sorted(str(value) for value in unknown_ids))
+            )
+
+    normalized = page.model_copy(deep=True)
+    normalized.page_number = requested_page_number
+    normalized.layout.layout_type = requested_layout_type
+    for index, panel in enumerate(normalized.panels):
+        panel.panel_index = index
+        panel.dialogue = sorted(
+            panel.dialogue,
+            key=lambda item: item.reading_order,
+        )
+        for reading_order, line in enumerate(panel.dialogue):
+            line.reading_order = reading_order
+    return normalized
+
+
 # ---------------------------------------------------------------------------
 # StoryboarderAgent
 # ---------------------------------------------------------------------------
@@ -306,6 +351,7 @@ class StoryboarderAgent:
         outline = writer_output.episode_outline
         dialogue = writer_output.dialogue_draft
         char_id_list = _build_char_id_list(bible)
+        requested_layout_type = LayoutType(layout_type)
 
         # Step 1: Initial storyboard
         page = await self._generate_page(
@@ -315,6 +361,13 @@ class StoryboarderAgent:
             page_number=page_number,
             panel_count=panel_count,
             layout_type=layout_type,
+        )
+        page = _normalize_page_contract(
+            page,
+            requested_page_number=page_number,
+            requested_panel_count=panel_count,
+            requested_layout_type=requested_layout_type,
+            character_bible=bible,
         )
         logger.info(
             "[StoryboarderAgent] Initial storyboard done — %d panels generated",
@@ -349,6 +402,13 @@ class StoryboarderAgent:
                     page=page,
                     report=report,
                     char_id_list=char_id_list,
+                )
+                page = _normalize_page_contract(
+                    page,
+                    requested_page_number=page_number,
+                    requested_panel_count=panel_count,
+                    requested_layout_type=requested_layout_type,
+                    character_bible=bible,
                 )
             else:
                 logger.warning(

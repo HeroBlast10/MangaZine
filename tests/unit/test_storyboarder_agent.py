@@ -19,6 +19,7 @@ from models.schemas import (
     CameraAngle,
     CharacterBible,
     EpisodeOutline,
+    LayoutType,
     PageSpec,
     PanelSpec,
     ShotType,
@@ -134,4 +135,5 @@ class TestStoryboarderAgent:
 
         assert isinstance(output, StoryboarderOutput)
         assert output.page is not None
+        assert output.page.layout.layout_type == LayoutType.TIER_STACK
         assert output.rhythm_check_rounds == 0

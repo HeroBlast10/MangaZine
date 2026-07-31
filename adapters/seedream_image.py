@@ -51,8 +51,14 @@ class SeedreamImageAdapter(BaseImageAdapter):
         reference_images: list[str] | None = None,
         draft_mode: bool = True,
         aspect_ratio: str = "1:1",
+        negative_prompt: str | None = None,
     ) -> GeneratedImageResult:
-        full_prompt = self._build_prompt(prompt, style_pack, aspect_ratio)
+        full_prompt = self._build_prompt(
+            prompt,
+            style_pack,
+            aspect_ratio,
+            negative_prompt=negative_prompt,
+        )
         size = self._map_aspect_ratio(aspect_ratio)
 
         if reference_images:
@@ -85,6 +91,7 @@ class SeedreamImageAdapter(BaseImageAdapter):
                         "size": size,
                         "base_url": self._base_url,
                         "reference_images_supplied": len(reference_images or []),
+                        "negative_prompt": negative_prompt,
                     },
                 )
 
@@ -125,7 +132,13 @@ class SeedreamImageAdapter(BaseImageAdapter):
         ]
         return await asyncio.gather(*tasks)
 
-    def _build_prompt(self, panel_desc: str, style_pack: StylePack, aspect_ratio: str) -> str:
+    def _build_prompt(
+        self,
+        panel_desc: str,
+        style_pack: StylePack,
+        aspect_ratio: str,
+        negative_prompt: str | None = None,
+    ) -> str:
         style_bits = [
             f"line weight {style_pack.line_weight:.2f}",
             f"contrast {style_pack.contrast:.2f}",
@@ -140,11 +153,14 @@ class SeedreamImageAdapter(BaseImageAdapter):
         if style_pack.tone_keywords:
             style_bits.append(f"tone {'; '.join(style_pack.tone_keywords[:8])}")
 
-        return (
+        full_prompt = (
             f"{panel_desc.strip()}\n\n"
             f"Create a professional manga panel with an approximate {aspect_ratio} framing. "
             f"Style cues: {', '.join(style_bits)}."
         )
+        if negative_prompt:
+            full_prompt += f" Strictly avoid: {negative_prompt.strip()}."
+        return full_prompt
 
     @staticmethod
     def _map_aspect_ratio(aspect_ratio: str) -> str:

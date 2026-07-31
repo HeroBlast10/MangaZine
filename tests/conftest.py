@@ -63,11 +63,15 @@ class MockLLMAdapter(BaseLLMAdapter):
         system_instruction: str | None = None,
         temperature: float = 0.7,
         max_output_tokens: int = 8192,
+        image_bytes: bytes | None = None,
+        image_mime_type: str = "image/png",
     ) -> T:
         self.call_log.append({
             "prompt": prompt[:200],
             "schema": response_schema.__name__,
             "temperature": temperature,
+            "has_image": image_bytes is not None,
+            "image_mime_type": image_mime_type if image_bytes is not None else None,
         })
         key = response_schema.__name__
         if key in self.responses:
@@ -110,8 +114,13 @@ class MockImageAdapter(BaseImageAdapter):
         reference_images: list[str] | None = None,
         draft_mode: bool = True,
         aspect_ratio: str = "1:1",
+        negative_prompt: str | None = None,
     ) -> GeneratedImageResult:
-        self.call_log.append({"prompt": prompt[:200], "draft": draft_mode})
+        self.call_log.append({
+            "prompt": prompt[:200],
+            "draft": draft_mode,
+            "negative_prompt": negative_prompt,
+        })
         return GeneratedImageResult(
             image_bytes=_1X1_PNG,
             model_used="mock-model",

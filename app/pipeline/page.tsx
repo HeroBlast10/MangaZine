@@ -11,11 +11,12 @@ import {
   Loader2,
   Play,
   Sparkles,
+  Square,
   XCircle,
   Zap,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +30,7 @@ interface PipelineEvent {
   payload?: Record<string, unknown>;
   timestamp?: string;
   elapsed_ms?: number;
+  detail?: string;
 }
 
 interface StepInfo {
@@ -74,9 +76,14 @@ export default function PipelinePage() {
   const [tokenSummary, setTokenSummary] = useState<TokenSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  useEffect(
+    () => () => {
+      abortControllerRef.current?.abort();
+    },
+    [],
+  );
 
   const resetState = useCallback(() => {
     setSteps(ALL_STEPS.map((name) => ({ name, label: STEP_LABELS[name], status: 'pending' })));
@@ -90,19 +97,23 @@ export default function PipelinePage() {
     if (!premise.trim()) return;
     resetState();
     setIsRunning(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      const response = await fetch(`${apiBase}/api/v1/pipeline/run`, {
+      const response = await fetch('/api/pipeline-run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           premise: premise.trim(),
           target_pages: pages,
         }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || `Server error: ${response.status}`);
       }
 
       const reader = response.body?.getReader();
@@ -155,6 +166,12 @@ export default function PipelinePage() {
               setError((event.payload?.error as string) || 'Pipeline failed');
             } else if (event.event_type === 'token_summary') {
               setTokenSummary(event as unknown as TokenSummary);
+            } else if (event.event_type === 'error') {
+              setError(
+                (event.detail as string | undefined) ||
+                  (event.payload?.detail as string | undefined) ||
+                  'Pipeline failed',
+              );
             }
           } catch {
             // skip malformed lines
@@ -162,11 +179,20 @@ export default function PipelinePage() {
         }
       }
     } catch (err) {
-      setError((err as Error).message);
+      if ((err as Error).name === 'AbortError') {
+        setError('Pipeline 已取消。');
+      } else {
+        setError((err as Error).message);
+      }
     } finally {
+      abortControllerRef.current = null;
       setIsRunning(false);
     }
-  }, [premise, pages, apiBase, resetState]);
+  }, [premise, pages, resetState]);
+
+  const handleCancel = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   const completedSteps = steps.filter((s) => s.status === 'completed').length;
   const totalElapsed = steps.reduce((sum, s) => sum + (s.elapsed_ms || 0), 0);
@@ -226,23 +252,26 @@ export default function PipelinePage() {
                     className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-violet-500 focus:outline-none disabled:opacity-50"
                   />
                 </div>
-                <button
-                  onClick={handleStart}
-                  disabled={isRunning || !premise.trim()}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-900/40 transition-all hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isRunning ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      运行中...
-                    </>
-                  ) : (
-                    <>
-                      <Play size={16} />
-                      启动 Pipeline
-                    </>
-                  )}
-                </button>
+                {isRunning ? (
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-950/40 transition-all hover:bg-red-600"
+                  >
+                    <Square size={15} />
+                    停止 Pipeline
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStart}
+                    disabled={!premise.trim()}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-900/40 transition-all hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Play size={16} />
+                    启动 Pipeline
+                  </button>
+                )}
               </div>
             </div>
 
@@ -379,7 +408,7 @@ export default function PipelinePage() {
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <Activity size={40} className="mb-4 text-zinc-800" />
                   <p className="text-sm text-zinc-600">
-                    输入故事前提并点击"启动 Pipeline"，
+                    输入故事前提并点击&quot;启动 Pipeline&quot;，
                     <br />
                     事件流将在这里实时显示。
                   </p>

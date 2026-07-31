@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
@@ -27,7 +28,7 @@ class LockConstraintsPayload(BaseModel):
 
 class RerenderPanelPayload(BaseModel):
     panel: PanelSpec
-    page_id: str
+    page_id: UUID
     style_pack: StylePack
     character_bible: CharacterBible
     lock_constraints: LockConstraintsPayload
@@ -89,9 +90,14 @@ def _resolve_reference_images(panel: PanelSpec) -> list[str]:
 
     image_path = Path(local_image_path)
     if not image_path.is_absolute():
-      image_path = PROJECT_ROOT / image_path
+        image_path = PROJECT_ROOT / image_path
+    image_path = image_path.resolve()
 
-    return [str(image_path)] if image_path.exists() else []
+    if not image_path.is_relative_to(OUTPUT_ROOT.resolve()):
+        return []
+    if image_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        return []
+    return [str(image_path)] if image_path.is_file() else []
 
 
 async def _rerender_panel(payload: RerenderPanelPayload) -> RerenderPanelResult:
@@ -108,13 +114,13 @@ async def _rerender_panel(payload: RerenderPanelPayload) -> RerenderPanelResult:
     prompt_sections.extend(_build_lock_clauses(payload, prompt_plan.style_suffix))
     final_prompt = "\n\n".join(section for section in prompt_sections if section)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
     output_path = (
         OUTPUT_ROOT
         / "rerenders"
-        / payload.page_id
+        / str(payload.page_id)
         / str(payload.panel.panel_id)
-        / f"{timestamp}.png"
+        / f"{timestamp}_{uuid4().hex[:8]}.png"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -122,12 +128,26 @@ async def _rerender_panel(payload: RerenderPanelPayload) -> RerenderPanelResult:
     result = await adapter.generate_panel_image(
         prompt=final_prompt,
         style_pack=payload.style_pack,
-        reference_images=_resolve_reference_images(payload.panel),
+        reference_images=(
+            _resolve_reference_images(payload.panel)
+            if (
+                payload.lock_constraints.lock_characters
+                or payload.lock_constraints.lock_style
+                or payload.lock_constraints.lock_composition
+            )
+            else None
+        ),
         draft_mode=True,
         aspect_ratio="2:3",
+        negative_prompt=prompt_plan.negative_prompt or None,
     )
 
-    output_path.write_bytes(result.image_bytes)
+    temporary_path = output_path.with_name(f".{output_path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary_path.write_bytes(result.image_bytes)
+        temporary_path.replace(output_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
     image_url = build_internal_image_url(output_path)
     if not image_url:
         raise ImageAdapterError(f"Could not build an internal image URL for {output_path}")
@@ -135,7 +155,7 @@ async def _rerender_panel(payload: RerenderPanelPayload) -> RerenderPanelResult:
     generation_params = {
         **result.generation_params,
         "local_image_path": to_project_relative_path(output_path),
-        "source_page_id": payload.page_id,
+        "source_page_id": str(payload.page_id),
         "source_panel_id": str(payload.panel.panel_id),
         "lock_constraints": payload.lock_constraints.model_dump(),
         "reference_prompt": final_prompt,

@@ -27,6 +27,10 @@ class PipelineRunRequest(BaseModel):
     target_pages: int = Field(default=1, ge=1, le=20)
     episode_number: int = Field(default=1, ge=1)
     continue_from: str | None = None
+    resume_from: str | None = Field(
+        default=None,
+        description="Relative output directory of an interrupted run to resume.",
+    )
 
 
 class PipelineStatusResponse(BaseModel):
@@ -50,14 +54,23 @@ class PipelineResumeRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class LockConstraintsRequest(BaseModel):
+    lock_characters: bool = True
+    lock_style: bool = True
+    lock_composition: bool = False
+    lock_dialogue: bool = False
+
+
 class RerenderPanelRequest(BaseModel):
     """POST /api/v1/panel/rerender"""
 
     panel: dict[str, Any]
-    page_id: str
+    page_id: UUID
     style_pack: dict[str, Any]
     character_bible: dict[str, Any]
-    lock_constraints: dict[str, bool] = Field(default_factory=dict)
+    lock_constraints: LockConstraintsRequest = Field(
+        default_factory=LockConstraintsRequest
+    )
 
 
 class RerenderPanelResponse(BaseModel):

@@ -6,7 +6,7 @@ Wraps OpenAI API for structured text generation using function calling.
 from __future__ import annotations
 
 import asyncio
-import json
+import base64
 import logging
 from typing import Type, TypeVar
 
@@ -61,6 +61,8 @@ class OpenAILLMAdapter(BaseLLMAdapter):
         system_instruction: str | None = None,
         temperature: float = _DEFAULT_TEMPERATURE,
         max_output_tokens: int = _DEFAULT_MAX_TOKENS,
+        image_bytes: bytes | None = None,
+        image_mime_type: str = "image/png",
     ) -> T:
         schema = response_schema.model_json_schema()
         
@@ -73,7 +75,21 @@ class OpenAILLMAdapter(BaseLLMAdapter):
         messages = []
         if system_instruction:
             messages.append({"role": "system", "content": system_instruction})
-        messages.append({"role": "user", "content": prompt})
+        if image_bytes is None:
+            user_content = prompt
+        else:
+            encoded_image = base64.b64encode(image_bytes).decode("ascii")
+            user_content = [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{image_mime_type};base64,{encoded_image}",
+                        "detail": "high",
+                    },
+                },
+            ]
+        messages.append({"role": "user", "content": user_content})
 
         last_exc: Exception | None = None
         for attempt in range(1, _MAX_RETRIES + 1):

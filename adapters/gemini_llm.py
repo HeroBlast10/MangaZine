@@ -107,6 +107,8 @@ class GeminiLLMAdapter(BaseLLMAdapter):
         system_instruction: str | None = None,
         temperature: float = _DEFAULT_TEMPERATURE,
         max_output_tokens: int = _DEFAULT_MAX_TOKENS,
+        image_bytes: bytes | None = None,
+        image_mime_type: str = "image/png",
     ) -> T:
         raw_schema = response_schema.model_json_schema()
         cleaned_schema = _strip_unsupported_schema_fields(raw_schema)
@@ -119,12 +121,22 @@ class GeminiLLMAdapter(BaseLLMAdapter):
             system_instruction=system_instruction,
         )
 
+        parts = [types.Part.from_text(text=prompt)]
+        if image_bytes is not None:
+            parts.append(
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=image_mime_type,
+                )
+            )
+        contents = [types.Content(role="user", parts=parts)]
+
         last_exc: Exception | None = None
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
                 response = await self._client.aio.models.generate_content(
                     model=self._model,
-                    contents=[prompt],
+                    contents=contents,
                     config=config,
                 )
                 return self._parse_response(response, response_schema)

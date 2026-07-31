@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel
 
@@ -50,7 +51,12 @@ class CheckpointManager:
         else:
             payload = json.dumps(data, indent=2, default=str)
 
-        path.write_text(payload, encoding="utf-8")
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        try:
+            temporary.write_text(payload, encoding="utf-8")
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
         self._saved_steps[step_name] = path
         logger.debug("Checkpoint saved: %s -> %s", step_name, path)
         return path

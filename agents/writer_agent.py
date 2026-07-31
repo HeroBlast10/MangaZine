@@ -180,7 +180,7 @@ Instructions:
 """
 
 _PROMPT_OUTLINE = """\
-Create an EpisodeOutline for Episode 1 of this manga.
+Create an EpisodeOutline for Episode {episode_number} of this manga.
 
 Premise: "{premise}"
 
@@ -188,7 +188,7 @@ CharacterBible:
 {bible_json}
 
 Instructions:
-- episode_number   : 1
+- episode_number   : {episode_number}
 - title            : a compelling, genre-fitting title
 - logline          : one-sentence hook capturing the core conflict
 - scenes           : 2–4 scenes. For each scene:
@@ -198,7 +198,7 @@ Instructions:
     • emotional_beat : core dramatic function of this scene (e.g. "hook", "rising tension",
                        "confrontation", "reversal", "cliffhanger")
     • characters_present : list of character_id UUIDs from the CharacterBible above
-- target_page_count : 8
+- target_page_count : {target_pages}
 - Do NOT include: episode_id, pages, created_at, updated_at.
 """
 
@@ -317,6 +317,8 @@ class WriterAgent:
         self,
         premise: str,
         style_pack: StylePack | None = None,  # reserved for future style-aware writing
+        target_pages: int = 8,
+        episode_number: int = 1,
     ) -> WriterAgentOutput:
         """
         Execute the full writer pipeline for *premise*.
@@ -333,7 +335,18 @@ class WriterAgent:
 
         # Step 2: Episode Outline
         logger.info("[WriterAgent] Generating EpisodeOutline…")
-        outline = await self._generate_episode_outline(premise, bible)
+        outline = (
+            await self._generate_episode_outline(
+                premise,
+                bible,
+                target_pages=target_pages,
+                episode_number=episode_number,
+            )
+        ).model_copy(deep=True)
+        # Structured generation may still return inconsistent metadata. The
+        # request is the source of truth for persisted project state.
+        outline.episode_number = episode_number
+        outline.target_page_count = target_pages
         logger.info("[WriterAgent] EpisodeOutline done — %d scenes", len(outline.scenes))
 
         # Step 3: Dialogue Draft
@@ -361,6 +374,9 @@ class WriterAgent:
             if round_num < _MAX_CRITIC_ROUNDS:
                 logger.info("[WriterAgent] Revising based on critic feedback…")
                 outline, dialogue = await self._revise(outline, dialogue, feedback, premise)
+                outline = outline.model_copy(deep=True)
+                outline.episode_number = episode_number
+                outline.target_page_count = target_pages
                 critic_rounds += 1
             else:
                 logger.warning(
@@ -397,11 +413,15 @@ class WriterAgent:
         self,
         premise: str,
         bible: CharacterBible,
+        target_pages: int,
+        episode_number: int,
     ) -> EpisodeOutline:
         return await self._llm.generate_structured_response(
             prompt=_PROMPT_OUTLINE.format(
                 premise=premise,
                 bible_json=bible.model_dump_json(indent=2),
+                target_pages=target_pages,
+                episode_number=episode_number,
             ),
             response_schema=EpisodeOutline,
             system_instruction=_SYSTEM_WRITER,

@@ -5,7 +5,7 @@ All comic elements are structured JSON states via Pydantic V2.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated
 from uuid import UUID, uuid4
@@ -553,11 +553,11 @@ class EpisodeOutline(BaseModel):
         description="Target page count for this episode (editorial budget).",
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="UTC timestamp of episode creation.",
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="UTC timestamp of last modification.",
     )
 
@@ -621,11 +621,11 @@ class ComicProject(BaseModel):
         description="Primary author or studio name.",
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="UTC timestamp of project creation.",
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="UTC timestamp of last modification to any part of the project.",
     )
     metadata: dict = Field(

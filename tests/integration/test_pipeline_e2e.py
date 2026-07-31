@@ -5,6 +5,7 @@ Verifies that the entire pipeline (orchestrator -> agents -> adapters)
 can execute end-to-end without real API calls.
 """
 
+import re
 import tempfile
 from pathlib import Path
 
@@ -30,7 +31,7 @@ from orchestrator.pipeline import PipelineOrchestrator, PipelineRequest
 from tests.conftest import MockImageAdapter, MockLLMAdapter
 
 
-def _make_mock_page(page_num: int = 1) -> PageSpec:
+def _make_mock_page(page_num: int = 1, panel_count: int = 4) -> PageSpec:
     return PageSpec(
         page_number=page_num,
         panels=[
@@ -42,16 +43,42 @@ def _make_mock_page(page_num: int = 1) -> PageSpec:
                 action_description="Characters interact",
                 prompt_plan="Dynamic manga panel of a marketplace scene",
             )
-            for i in range(4)
+            for i in range(panel_count)
         ],
     )
+
+
+class _AdaptivePageMockLLM(MockLLMAdapter):
+    """Return the exact panel count requested by the storyboard contract."""
+
+    async def generate_structured_response(
+        self,
+        prompt,
+        response_schema,
+        *args,
+        **kwargs,
+    ):
+        if response_schema is PageSpec:
+            panel_count_match = re.search(r"exactly (\d+) panels", prompt)
+            page_number_match = re.search(r"page (\d+)", prompt, flags=re.IGNORECASE)
+            assert panel_count_match is not None
+            return _make_mock_page(
+                page_num=int(page_number_match.group(1)) if page_number_match else 1,
+                panel_count=int(panel_count_match.group(1)),
+            )
+        return await super().generate_structured_response(
+            prompt,
+            response_schema,
+            *args,
+            **kwargs,
+        )
 
 
 @pytest.mark.asyncio
 async def test_e2e_single_page(sample_character_bible, sample_episode_outline):
     """Full pipeline: 1 page, all agents run, project_final.json written."""
 
-    llm = MockLLMAdapter(responses={
+    llm = _AdaptivePageMockLLM(responses={
         "CharacterBible": sample_character_bible,
         "EpisodeOutline": sample_episode_outline,
         "DialogueDraft": DialogueDraft(
@@ -65,7 +92,6 @@ async def test_e2e_single_page(sample_character_bible, sample_episode_outline):
             overall_score=9, is_approved=True,
             general_feedback="Excellent pacing",
         ),
-        "PageSpec": _make_mock_page(),
     })
     img = MockImageAdapter()
     bus = EventBus()
@@ -110,7 +136,7 @@ async def test_e2e_single_page(sample_character_bible, sample_episode_outline):
 async def test_e2e_multi_page(sample_character_bible, sample_episode_outline):
     """Full pipeline: 3 pages, verifies all pages are generated."""
 
-    llm = MockLLMAdapter(responses={
+    llm = _AdaptivePageMockLLM(responses={
         "CharacterBible": sample_character_bible,
         "EpisodeOutline": sample_episode_outline,
         "DialogueDraft": DialogueDraft(
@@ -124,7 +150,6 @@ async def test_e2e_multi_page(sample_character_bible, sample_episode_outline):
             overall_score=8, is_approved=True,
             general_feedback="Good",
         ),
-        "PageSpec": _make_mock_page(),
     })
     img = MockImageAdapter()
     bus = EventBus()
@@ -138,10 +163,16 @@ async def test_e2e_multi_page(sample_character_bible, sample_episode_outline):
         project = await orchestrator.run(PipelineRequest(
             premise="An epic adventure",
             target_pages=3,
+            episode_number=5,
             output_dir=tmp,
         ))
 
         assert len(project.episodes[0].pages) == 3
+        assert project.episodes[0].episode_number == 5
+        assert project.episodes[0].target_page_count == 3
+        assert [page.page_number for page in project.episodes[0].pages] == [1, 2, 3]
 
         images_generated = len(img.call_log)
-        assert images_generated == 3 * 4  # 3 pages x 4 panels
+        assert images_generated == sum(
+            len(page.panels) for page in project.episodes[0].pages
+        )
